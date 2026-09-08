@@ -464,10 +464,17 @@ class CogMemBank(nn.Module):
                 if instructions is not None and i < len(instructions)
                 else ""
             )
-            mode, _ = self.query_retriever.router.route(
-                retrieval.RetrievalQuery(text=instruction)
-            )
-            task_type=mode.value    
+            if self.query_retrieval_mode == "by_modal":
+                # The modality-aware path uses its own four task types to select
+                # per-bank retrieval budgets.
+                task_type = self.modal_retriever.router.route(
+                    ModalRetrievalQuery(text=instruction)
+                )
+            else:
+                mode, _ = self.query_retriever.router.route(
+                    retrieval.RetrievalQuery(text=instruction)
+                )
+                task_type = mode.value
             position = positions[i] if positions is not None else None
 
             # 1) episode management

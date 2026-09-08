@@ -27,10 +27,9 @@ import torch.nn.functional as F
 
 class RetrievalMode(str, Enum):
     DEFAULT = "default"
-    SEMANTIC_SPATIAL_RECENT = "semantic_spatial_recent"
+    SPATIAL = "spatial"
     OBJECT_STATE = "object_state"
-    AUDIO_TEMPORAL_VISUAL = "audio_temporal_visual"
-    NAVIGATION = "navigation"
+    TEMPORAL = "temporal"
 
 @dataclass
 class ModalMemoryRecord:
@@ -55,10 +54,12 @@ class QueryModeClassifier:
     """The CLIP + linear query router trained by train_query_router.py."""
 
     LABEL_TO_MODE = {
-        "navigation": RetrievalMode.NAVIGATION,
+        "spatial": RetrievalMode.SPATIAL,
+        # Keep old checkpoints usable: their first class was named "navigation".
+        "navigation": RetrievalMode.SPATIAL,
         "object_state": RetrievalMode.OBJECT_STATE,
         "default": RetrievalMode.DEFAULT,
-        "temporal": RetrievalMode.AUDIO_TEMPORAL_VISUAL,
+        "temporal": RetrievalMode.TEMPORAL,
     }
 
     def __init__(self, checkpoint_path: Optional[str] = None) -> None:
@@ -135,7 +136,7 @@ class RetrievalResult:
 
 
 TASK_MEMORY_BUDGETS = {
-    "navigation": {
+    "spatial": {
         "cog": 3,
         "per": 1,
         "spatial": 4,
@@ -219,7 +220,8 @@ def task_score(query: ModalRetrievalQuery, memory: ModalMemoryRecord) -> float:
     if query_objects and query_objects.intersection(memory_objects):
         score += 0.3
     # modality_hints are what type of memory would be useful for thiw query
-    # task type are what we are trying to do: navigation, object_state. hinst are like visual, audio, ...
+    # Task types describe the requested behavior (spatial, object_state, temporal,
+    # or default); modality hints describe useful memory sources (visual, audio, ...).
     if memory.modality.lower() in modality_hints:
         score += 0.2
 
@@ -236,38 +238,39 @@ class ManualRetrievalRouter:
 
     # store the key of the last dict as its value: easy for conversion from task_type to mode
     TASK_TYPE_TO_MODE = {
-        "navigation": RetrievalMode.NAVIGATION,
-        "navigate": RetrievalMode.NAVIGATION,
+        "spatial": RetrievalMode.SPATIAL,
+        "navigation": RetrievalMode.SPATIAL,
+        "navigate": RetrievalMode.SPATIAL,
         "object_state": RetrievalMode.OBJECT_STATE,
         "state": RetrievalMode.OBJECT_STATE,
-        "audio_temporal_visual": RetrievalMode.AUDIO_TEMPORAL_VISUAL,
-        "audio_temporal": RetrievalMode.AUDIO_TEMPORAL_VISUAL,
-        "semantic_spatial_recent": RetrievalMode.SEMANTIC_SPATIAL_RECENT,
-        "recent": RetrievalMode.SEMANTIC_SPATIAL_RECENT,
+        "temporal": RetrievalMode.TEMPORAL,
+        "audio_temporal_visual": RetrievalMode.TEMPORAL,
+        "audio_temporal": RetrievalMode.TEMPORAL,
+        "semantic_spatial_recent": RetrievalMode.TEMPORAL,
+        "recent": RetrievalMode.TEMPORAL,
     }
 
-    NAVIGATION_TERMS = ("go to", "navigate", "where is", "find", "return to")
-    RECENT_TERMS = ("last seen", "recent", "before", "earlier", "previously")
+    SPATIAL_TERMS = ("go to", "navigate", "where is", "find", "return to")
+    TEMPORAL_TERMS = ("last seen", "recent", "before", "earlier", "previously")
     STATE_TERMS = ("state", "open", "closed", "on", "off", "moved", "changed")
 
     MANUAL_TASK_LABELS = {
-        "pick up the object and move it to a goal position.": "navigation",
+        "pick up the object and move it to a goal position.": "spatial",
         "pick up a designated object from a clutter of objects.": "object_state",
         "turn on the faucet by rotating a designated handle.": "default",
-        "insert a designated object into the corresponding slot on a board.": "navigation",
-        "plug the charger into the wall socket.": "navigation",
-        "stack the red cube on top of the green cube.": "navigation",
-        "insert the peg into the horizontal hole in a box.": "navigation",
-        "pick up the red cube and move it to a goal position.": "navigation",
-        "lift up the red cube by 0.2 meters.": "navigation"
+        "insert a designated object into the corresponding slot on a board.": "spatial",
+        "plug the charger into the wall socket.": "spatial",
+        "stack the red cube on top of the green cube.": "spatial",
+        "insert the peg into the horizontal hole in a box.": "spatial",
+        "pick up the red cube and move it to a goal position.": "spatial",
+        "lift up the red cube by 0.2 meters.": "spatial"
     }
 
     # classify each query into different modes
-    MODE_TO_BUDGET = {
-        RetrievalMode.NAVIGATION: "navigation",
+    MODE_TO_TASK_TYPE = {
+        RetrievalMode.SPATIAL: "spatial",
         RetrievalMode.OBJECT_STATE: "object_state",
-        RetrievalMode.AUDIO_TEMPORAL_VISUAL: "temporal",
-        RetrievalMode.SEMANTIC_SPATIAL_RECENT: "temporal",
+        RetrievalMode.TEMPORAL: "temporal",
         RetrievalMode.DEFAULT: "default",
     }
 
@@ -286,7 +289,7 @@ class ManualRetrievalRouter:
         if self.use_classifier and self.classifier is not None:
             classified_mode = self.classifier.classify(query)
             if classified_mode is not None:
-                return self.MODE_TO_BUDGET[classified_mode]
+                return self.MODE_TO_TASK_TYPE[classified_mode]
         
 
 
@@ -307,11 +310,11 @@ class ManualRetrievalRouter:
     def _mode_from_text(self, text: str) -> RetrievalMode:
         normalized = text.lower()
 
-        # put in texts-> detect keyword in NAVIGATION_TERMS->return the mode
-        if any(term in normalized for term in self.NAVIGATION_TERMS):
-            return RetrievalMode.NAVIGATION
-        if any(term in normalized for term in self.RECENT_TERMS):
-            return RetrievalMode.SEMANTIC_SPATIAL_RECENT
+        # Use text terms only as a fallback when explicit task metadata is absent.
+        if any(term in normalized for term in self.SPATIAL_TERMS):
+            return RetrievalMode.SPATIAL
+        if any(term in normalized for term in self.TEMPORAL_TERMS):
+            return RetrievalMode.TEMPORAL
         if any(term in normalized for term in self.STATE_TERMS):
             return RetrievalMode.OBJECT_STATE
 

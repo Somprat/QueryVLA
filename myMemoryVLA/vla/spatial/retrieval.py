@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from math import exp
+import re
 from typing import Any, Mapping, Optional, Protocol, Sequence
 
 import torch
@@ -11,10 +12,23 @@ import torch.nn.functional as F
 
 class RetrievalMode(str, Enum):
     DEFAULT = "default"
-    SEMANTIC_SPATIAL_RECENT = "semantic_spatial_recent"
+    SPATIAL = "spatial"
     OBJECT_STATE = "object_state"
-    AUDIO_TEMPORAL_VISUAL = "audio_temporal_visual"
-    NAVIGATION = "navigation"
+    TEMPORAL = "temporal"
+
+    @classmethod
+    def _missing_(cls, value):
+        """Map names emitted by older configs to the four canonical modes."""
+        aliases = {
+            "navigation": cls.SPATIAL,
+            "navigate": cls.SPATIAL,
+            "semantic_spatial_recent": cls.TEMPORAL,
+            "audio_temporal_visual": cls.TEMPORAL,
+            "audio_temporal": cls.TEMPORAL,
+            "recent": cls.TEMPORAL,
+            "state": cls.OBJECT_STATE,
+        }
+        return aliases.get(str(value).lower())
 
 
 # dataclass is a normal class but was automatically equipped with init, __repr__ and __eq__
@@ -54,10 +68,9 @@ class RetrievalQuery:
 # doesn't allowed these weights to be changed
 @dataclass(frozen=True)
 class RetrievalWeights:
-    semantic: float = 0.25
-    spatial: float = 0.25
-    temporal: float = 0.25
-    task: float = 0.25
+    semantic: float = 0.40
+    spatial: float = 0.30
+    temporal: float = 0.30
 
 
 @dataclass
@@ -137,88 +150,82 @@ def temporal_score(
     return exp(-age / max(temporal_scale, 1e-6))
 
 
-def task_score(query: RetrievalQuery, memory: MemoryRecord) -> float:
-
-    # Next step: implement the object Id
-    score = 0.0
-    # store stuff in set to prevent duplicates
-    task_tags = {tag.lower() for tag in memory.task_tags}
-    query_objects = {object_id.lower() for object_id in query.object_ids}
-    memory_objects = {object_id.lower() for object_id in memory.object_ids}
-    modality_hints = {hint.lower() for hint in query.modality_hints}
-
-    # if the query's task type is in the memory task tags, task_score + 0.5
-    if query.task_type is not None and query.task_type.lower() in task_tags:
-        score += 0.5
-    # similarly but for objects
-    if query_objects and query_objects.intersection(memory_objects):
-        score += 0.3
-    # modality_hints are what type of memory would be useful for thiw query
-    # task type are what we are trying to do: navigation, object_state. hinst are like visual, audio, ...
-    if memory.modality.lower() in modality_hints:
-        score += 0.2
-
-    return _clamp01(score)
-
 MANUAL_TASK_LABELS = {
-    "pick up the object and move it to a goal position.": "navigation",
+    "pick up the object and move it to a goal position.": "spatial",
     "pick up a designated object from a clutter of objects.": "object_state",
     "turn on the faucet by rotating a designated handle.": "default",
-    "insert a designated object into the corresponding slot on a board.": "navigation",
-    "plug the charger into the wall socket.": "navigation",
-    "stack the red cube on top of the green cube.": "navigation",
-    "insert the peg into the horizontal hole in a box.": "navigation",
-    "pick up the red cube and move it to a goal position.": "navigation",
-    "lift up the red cube by 0.2 meters.": "navigation"
+    "insert a designated object into the corresponding slot on a board.": "spatial",
+    "plug the charger into the wall socket.": "spatial",
+    "stack the red cube on top of the green cube.": "spatial",
+    "insert the peg into the horizontal hole in a box.": "spatial",
+    "pick up the red cube and move it to a goal position.": "spatial",
+    "lift up the red cube by 0.2 meters.": "spatial"
 }
 
 class ManualRetrievalRouter:
-    """Select retrieval weights from explicit task metadata, with heuristic fallback."""
+    """Use the task category to select semantic/spatial/temporal weights."""
 
     # create dictionary pairs of the task's name and its optimal weights
     WEIGHTS = {
         RetrievalMode.DEFAULT: RetrievalWeights(),
-        RetrievalMode.SEMANTIC_SPATIAL_RECENT: RetrievalWeights(
-            semantic=0.35,
-            spatial=0.25,
-            temporal=0.30,
-            task=0.10,
+        RetrievalMode.TEMPORAL: RetrievalWeights(
+            semantic=0.30,
+            spatial=0.20,
+            temporal=0.50,
         ),
         RetrievalMode.OBJECT_STATE: RetrievalWeights(
-            semantic=0.25,
-            spatial=0.15,
+            semantic=0.50,
+            spatial=0.20,
+            temporal=0.30,
+        ),
+        RetrievalMode.SPATIAL: RetrievalWeights(
+            semantic=0.30,
+            spatial=0.50,
             temporal=0.20,
-            task=0.40,
-        ),
-        RetrievalMode.AUDIO_TEMPORAL_VISUAL: RetrievalWeights(
-            semantic=0.20,
-            spatial=0.10,
-            temporal=0.35,
-            task=0.35,
-        ),
-        RetrievalMode.NAVIGATION: RetrievalWeights(
-            semantic=0.25,
-            spatial=0.45,
-            temporal=0.15,
-            task=0.15,
         ),
     }
 
     # store the key of the last dict as its value: easy for conversion from task_type to mode
     TASK_TYPE_TO_MODE = {
-        "navigation": RetrievalMode.NAVIGATION,
-        "navigate": RetrievalMode.NAVIGATION,
+        "spatial": RetrievalMode.SPATIAL,
+        "navigation": RetrievalMode.SPATIAL,
+        "navigate": RetrievalMode.SPATIAL,
         "object_state": RetrievalMode.OBJECT_STATE,
         "state": RetrievalMode.OBJECT_STATE,
-        "audio_temporal_visual": RetrievalMode.AUDIO_TEMPORAL_VISUAL,
-        "audio_temporal": RetrievalMode.AUDIO_TEMPORAL_VISUAL,
-        "semantic_spatial_recent": RetrievalMode.SEMANTIC_SPATIAL_RECENT,
-        "recent": RetrievalMode.SEMANTIC_SPATIAL_RECENT,
+        "temporal": RetrievalMode.TEMPORAL,
+        "audio_temporal_visual": RetrievalMode.TEMPORAL,
+        "audio_temporal": RetrievalMode.TEMPORAL,
+        "semantic_spatial_recent": RetrievalMode.TEMPORAL,
+        "recent": RetrievalMode.TEMPORAL,
     }
 
-    NAVIGATION_TERMS = ("go to", "navigate", "where is", "find", "return to")
-    RECENT_TERMS = ("last seen", "recent", "before", "earlier", "previously")
-    STATE_TERMS = ("state", "open", "closed", "on", "off", "moved", "changed")
+    SPATIAL_TERMS = (
+        "go to",
+        "navigate",
+        "where is",
+        "find",
+        "return to",
+        "pick up",
+        "put",
+        "place",
+        "stack",
+        "insert",
+        "plug",
+        "move",
+        "lift",
+    )
+    TEMPORAL_TERMS = ("last seen", "recent", "before", "earlier", "previously")
+    STATE_TERMS = (
+        "state",
+        "open",
+        "closed",
+        "turn on",
+        "turn off",
+        "switch on",
+        "switch off",
+        "moved",
+        "changed",
+    )
 
     # classify each query into different modes
     def __init__(self, classifier: Optional[QueryModeClassifier] = None) -> None:
@@ -250,12 +257,17 @@ class ManualRetrievalRouter:
     def _mode_from_text(self, text: str) -> RetrievalMode:
         normalized = text.lower()
 
-        # put in texts-> detect keyword in NAVIGATION_TERMS->return the mode
-        if any(term in normalized for term in self.NAVIGATION_TERMS):
-            return RetrievalMode.NAVIGATION
-        if any(term in normalized for term in self.RECENT_TERMS):
-            return RetrievalMode.SEMANTIC_SPATIAL_RECENT
-        if any(term in normalized for term in self.STATE_TERMS):
+        def contains_any(terms: Sequence[str]) -> bool:
+            return any(
+                re.search(rf"\b{re.escape(term)}\b", normalized) is not None
+                for term in terms
+            )
+
+        if contains_any(self.SPATIAL_TERMS):
+            return RetrievalMode.SPATIAL
+        if contains_any(self.TEMPORAL_TERMS):
+            return RetrievalMode.TEMPORAL
+        if contains_any(self.STATE_TERMS):
             return RetrievalMode.OBJECT_STATE
 
         return RetrievalMode.DEFAULT
@@ -286,14 +298,12 @@ class MemoryRetriever:
             semantic = semantic_score(query, memory)
             spatial = spatial_score(query, memory, spatial_scale=self.spatial_scale)
             temporal = temporal_score(query, memory, temporal_scale=self.temporal_scale)
-            task = task_score(query, memory)
-            # sum of weights*task score
-            # task score was obtain by consine similarity of query and memory
+            # Task type selects the weight profile; it is not itself a
+            # similarity component.
             total = (
                 weights.semantic * semantic
                 + weights.spatial * spatial
                 + weights.temporal * temporal
-                + weights.task * task
             )
             # at the end, append memory, score, breakdown which is just some info and mode
             results.append(
@@ -304,7 +314,6 @@ class MemoryRetriever:
                         "semantic": semantic,
                         "spatial": spatial,
                         "temporal": temporal,
-                        "task": task,
                     },
                     mode=mode,
                 )
@@ -315,6 +324,6 @@ class MemoryRetriever:
         return results[:top_k]
     
 
-# keep score between 0 and 1, used in smeantic, task,... scores
+# Keep the semantic score between 0 and 1.
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))

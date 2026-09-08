@@ -13,7 +13,7 @@ model = CLIPModel.from_pretrained(
     "openai/clip-vit-base-patch32"
 )
 
-LABELS = ['navigation', "object_state", "default", "temporal"]
+LABELS = ["spatial", "object_state", "default", "temporal"]
 LABEL_TO_ID = {label: index for index, label in enumerate(LABELS)}
 
 device = torch.device(
