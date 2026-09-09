@@ -46,8 +46,8 @@ Use the pinned SAPIEN version. This SimplerEnv/ManiSkill code targets an older A
 
 ```bash
 cd /workspace
-git clone https://github.com/Somprat/multimodal.git
-cd /workspace/multimodal
+git clone https://github.com/Somprat/QueryVLA.git
+cd /workspace/QueryVLA
 export REPO_ROOT="$PWD"
 ```
 
