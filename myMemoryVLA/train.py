@@ -78,6 +78,7 @@ class TrainConfig:
     experiment_mode: str = "full" # baseline, episodic, query, query_episodic, or full
     freeze_vlm: bool = True # Recompute VLM features without updating PrismaticVLM
     freeze_action_model: bool = True # Preserve the pretrained action policy for adapter ablations
+    activate_spatial_path: bool = False # Condition diffusion directly on spatial-memory tokens
     use_timestep_pe: bool = True # Whether to use timestep positional encoding
     fusion_type: str = 'gate' # Memory fusion type, chose from ['gate', 'add']
     consolidate_type: str = 'tome' # Memory consolidate type, chose from ['fifo', 'tome']
@@ -234,6 +235,7 @@ def train(cfg: TrainConfig) -> None:
         "Training scope =>> "
         f"experiment_mode={cfg.experiment_mode}, freeze_vlm={cfg.freeze_vlm}, "
         f"freeze_action_model={cfg.freeze_action_model}, "
+        f"activate_spatial_path={cfg.activate_spatial_path}, "
         f"load_depth={cfg.load_depth}, "
         f"trainable_modules={vla.trainable_module_keys}"
     )

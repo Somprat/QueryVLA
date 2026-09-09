@@ -28,6 +28,8 @@ class ActionModel(nn.Module):
                  noise_schedule='squaredcos_cap_v2',
                  use_per_attn=False,
                  per_token_size=None,
+                 use_spatial_attn=False,
+                 spatial_token_size=None
                  ):
         super().__init__()
         self.in_channels = in_channels
@@ -51,10 +53,19 @@ class ActionModel(nn.Module):
             future_action_window_size=future_action_window_size,
             use_per_attn=use_per_attn,
             per_token_size=per_token_size,
+            use_spatial_attn=use_spatial_attn,
+            spatial_token_size=spatial_token_size
             )
 
     # Given condition z and ground truth token x, compute loss
-    def loss(self, x, z, per_token):
+    def loss(
+        self,
+        x,
+        z,
+        per_token,
+        spatial_token=None,
+        spatial_valid=None,
+    ):
         # sample random noise and timestep
         noise = torch.randn_like(x) # [B, T, C]
 
@@ -64,7 +75,14 @@ class ActionModel(nn.Module):
         x_t = self.diffusion.q_sample(x, timestep, noise)
 
         # predict noise from x_t
-        noise_pred = self.net(x_t, timestep, z, per_token=per_token)
+        noise_pred = self.net(
+            x_t,
+            timestep,
+            z,
+            per_token=per_token,
+            spatial_token=spatial_token,
+            spatial_valid=spatial_valid,
+        )
 
         assert noise_pred.shape == noise.shape == x.shape
         # Compute L2 loss

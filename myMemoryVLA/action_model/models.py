@@ -110,6 +110,15 @@ class PerTokenEmbedder(nn.Module):
         return x
 
 
+class SpatialTokenEmbedder(nn.Module):
+    def __init__(self, spatial_token_size, hidden_size):
+        super().__init__()
+        self.linear = nn.Linear(spatial_token_size, hidden_size)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return x
+
 #################################################################################
 #                                 Core DiT Model                                #
 #################################################################################
@@ -117,7 +126,7 @@ class DiTBlock(nn.Module):
     """
     A DiT block with self-attention conditioning.
     """
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, use_per_attn=False, **block_kwargs):
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, use_per_attn=False, use_spatial_attn=False, **block_kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(
@@ -134,6 +143,7 @@ class DiTBlock(nn.Module):
             act_layer=approx_gelu, drop=0)
 
         self.use_per_attn = use_per_attn
+        self.use_spatial_attn=use_spatial_attn
         if self.use_per_attn:
             self.per_attn = nn.MultiheadAttention(
                 embed_dim=hidden_size,
@@ -149,8 +159,23 @@ class DiTBlock(nn.Module):
             nn.init.constant_(self.per_attn.out_proj.bias, 0.)
 
             self.norm3 = nn.LayerNorm(hidden_size, eps=1e-6)
+        if self.use_spatial_attn:
+            self.spatial_attn = nn.MultiheadAttention(
+                embed_dim=hidden_size,
+                num_heads=num_heads,
+                bias=True,
+                batch_first=True,
+            )
 
-    def forward(self, x, per_token):
+            # zero initialization trick
+            nn.init.constant_(self.spatial_attn.in_proj_weight, 0.)
+            nn.init.constant_(self.spatial_attn.in_proj_bias, 0.)
+            nn.init.constant_(self.spatial_attn.out_proj.weight, 0.)
+            nn.init.constant_(self.spatial_attn.out_proj.bias, 0.)
+
+            self.spatial_norm = nn.LayerNorm(hidden_size, eps=1e-6)
+
+    def forward(self, x, per_token=None, spatial_token=None, spatial_valid=None):
         x = x + self.attn(self.norm1(x))
 
         if self.use_per_attn:
@@ -158,7 +183,17 @@ class DiTBlock(nn.Module):
 
             x_c, _ = self.per_attn(self.norm3(x), per_token, per_token)
             x = x + x_c
+        if self.use_spatial_attn:
+            assert spatial_token is not None
 
+            x_c, _ = self.spatial_attn(
+                self.spatial_norm(x), spatial_token, spatial_token
+            )
+            if spatial_valid is not None:
+                x_c = x_c * spatial_valid[:, None, None].to(
+                    device=x_c.device, dtype=x_c.dtype
+                )
+            x = x + x_c
         x = x + self.mlp(self.norm2(x))
         return x
 
@@ -195,6 +230,8 @@ class DiT(nn.Module):
         learn_sigma=False,
         use_per_attn=False,
         per_token_size=None,
+        use_spatial_attn=False,
+        spatial_token_size=None
     ):
         super().__init__()
 
@@ -206,6 +243,8 @@ class DiT(nn.Module):
         self.future_action_window_size = future_action_window_size
         self.use_per_attn = use_per_attn
         self.per_token_size = per_token_size
+        self.use_spatial_attn = use_spatial_attn
+        self.spatial_token_size=spatial_token_size
 
         self.x_embedder = ActionEmbedder(
             action_size=in_channels, hidden_size=hidden_size)
@@ -222,6 +261,13 @@ class DiT(nn.Module):
             self.per_token_embedder = PerTokenEmbedder(
                 per_token_size=per_token_size,
                 hidden_size=hidden_size)
+        if self.use_spatial_attn:
+            assert spatial_token_size is not None
+
+            self.spatial_token_embedder = SpatialTokenEmbedder(
+                spatial_token_size=self.spatial_token_size,
+                hidden_size=hidden_size
+            )
 
         scale = hidden_size ** -0.5
 
@@ -239,6 +285,7 @@ class DiT(nn.Module):
                 num_heads,
                 mlp_ratio=mlp_ratio,
                 use_per_attn=use_per_attn,
+                use_spatial_attn=use_spatial_attn
             ) for _ in range(depth)
         ])
 
@@ -276,7 +323,15 @@ class DiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-    def forward(self, x, t, z, per_token=None):
+    def forward(
+        self,
+        x,
+        t,
+        z,
+        per_token=None,
+        spatial_token=None,
+        spatial_valid=None,
+    ):
         """
         Forward pass of DiT.
         history: (N, H, D) tensor of action history # not used now
@@ -290,17 +345,28 @@ class DiT(nn.Module):
 
         if self.use_per_attn:
             per_token = self.per_token_embedder(per_token)      # (N, P, D_per)
+        if self.use_spatial_attn:
+            spatial_token = self.spatial_token_embedder(spatial_token)
 
         c = t.unsqueeze(1) + z                              # (N, 1, D)
         x = torch.cat((c, x), dim=1)                        # (N, T+1, D)
         x = x + self.positional_embedding                   # (N, T+1, D)
         for block in self.blocks:
-            x = block(x, per_token)                                    # (N, T+1, D)
+            x = block(x, per_token, spatial_token, spatial_valid)  # (N, T+1, D)
         x = self.final_layer(x)                             # (N, T+1, out_channels)
         # print('parameters', self.final_layer, self.final_layer.parameters())
         return x[:, 1:, :]     # (N, T, C)
 
-    def forward_with_cfg(self, x, t, z, cfg_scale, per_token):
+    def forward_with_cfg(
+        self,
+        x,
+        t,
+        z,
+        cfg_scale,
+        per_token,
+        spatial_token=None,
+        spatial_valid=None,
+    ):
         """
         Forward pass of Diffusion, but also batches the unconditional forward pass for classifier-free guidance.
         """
@@ -309,7 +375,14 @@ class DiT(nn.Module):
         half = x[: len(x) // 2]
         combined = torch.cat([half, half], dim=0).to(
             next(self.x_embedder.parameters()).dtype)
-        model_out = self.forward(combined, t, z, per_token)
+        model_out = self.forward(
+            combined,
+            t,
+            z,
+            per_token,
+            spatial_token,
+            spatial_valid,
+        )
         # eps, rest = model_out[:, :self.in_channels], model_out[:, self.in_channels:]
         eps, rest = model_out[:, :,
                               :self.in_channels], model_out[:, :, self.in_channels:]

@@ -61,8 +61,13 @@ fi
 
 image_aug=True
 freeze_action_model="${FREEZE_ACTION_MODEL:-true}"
+activate_spatial_path="${ACTIVATE_SPATIAL_PATH:-false}"
 if [[ "${freeze_action_model}" != "true" && "${freeze_action_model}" != "false" ]]; then
   echo "FREEZE_ACTION_MODEL must be true or false, got: ${freeze_action_model}" >&2
+  exit 1
+fi
+if [[ "${activate_spatial_path}" != "true" && "${activate_spatial_path}" != "false" ]]; then
+  echo "ACTIVATE_SPATIAL_PATH must be true or false, got: ${activate_spatial_path}" >&2
   exit 1
 fi
 if [[ "${freeze_action_model}" == "true" && ( "${experiment_mode}" == "baseline" || "${experiment_mode}" == "query" ) ]]; then
@@ -109,4 +114,5 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
   --episodic_max_steps "${EPISODIC_MAX_STEPS:-10}" \
   --episodic_top_k "${EPISODIC_TOP_K:-2}" \
   --freeze_vlm true \
-  --freeze_action_model "${freeze_action_model}"
+  --freeze_action_model "${freeze_action_model}" \
+  --activate_spatial_path "${activate_spatial_path}"

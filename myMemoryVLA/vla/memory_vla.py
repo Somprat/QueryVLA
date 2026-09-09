@@ -978,12 +978,12 @@ class MemoryVLA(nn.Module):
         episodic_max_steps: int = 10,
         episodic_top_k: int = 2,
 
-
         max_steps: int = 5,
     
         kick_method: str = "fifo",
         top_k: int = 4,
         novelty_threshold = 0.8,
+        activate_spatial_path=False,
 
 
 
@@ -1012,6 +1012,13 @@ class MemoryVLA(nn.Module):
         self.future_action_window_size = future_action_window_size
         self.use_ema = use_ema
         self.norm_stats = norm_stats
+        self.activate_spatial_path = activate_spatial_path
+        self.num_spatial_tokens = num_spatial_tokens
+
+        if self.activate_spatial_path and not self.use_spatial:
+            raise ValueError(
+                "activate_spatial_path requires experiment_mode='full'"
+            )
 
         self.cog_token_size = token_size
 
@@ -1163,6 +1170,10 @@ class MemoryVLA(nn.Module):
             future_action_window_size=future_action_window_size,
             use_per_attn=True,
             per_token_size=per_token_size,
+            use_spatial_attn=self.activate_spatial_path,
+            spatial_token_size=(
+                per_token_size if self.activate_spatial_path else None
+            ),
         )
 
         self.active_ep_id = None
@@ -1193,6 +1204,11 @@ class MemoryVLA(nn.Module):
                 self.spatial_encoder,
                 self.point_cloud_spatial_encoder,
                 self.spatial_mem_bank,
+                self.spatial_to_per_fusion,
+                self.per_spatial_gate,
+            ))
+        elif self.activate_spatial_path:
+            inactive_modules.extend((
                 self.spatial_to_per_fusion,
                 self.per_spatial_gate,
             ))
@@ -1258,6 +1274,11 @@ class MemoryVLA(nn.Module):
         self.action_model.requires_grad_(not self.freeze_action_model)
         if self.freeze_action_model:
             self.action_model.eval()
+            if self.activate_spatial_path:
+                self.action_model.net.spatial_token_embedder.requires_grad_(True)
+                for block in self.action_model.net.blocks:
+                    block.spatial_attn.requires_grad_(True)
+                    block.spatial_norm.requires_grad_(True)
         self._refresh_trainable_module_keys()
 
     def train(self, mode: bool = True):
@@ -1478,6 +1499,8 @@ class MemoryVLA(nn.Module):
         encoder_param = next(self.point_cloud_spatial_encoder.parameters())
         return extrinsics.to(device=encoder_param.device, dtype=torch.float32)
 
+# optional: comment out fuse spatial tokens
+# deliver the tokens from the encoder (already attend spatial bank) straights to the diffusion
     def forward(
         self,
         depth: Optional[torch.FloatTensor] = None,
@@ -1593,6 +1616,8 @@ class MemoryVLA(nn.Module):
                 episode_mem_ids=episode_ids,
             )
 
+        spatial_tokens_for_diffusion = None
+        spatial_valid_for_diffusion = None
         if self.use_spatial:
             if spatial_valid is None:
                 spatial_valid = torch.ones(
@@ -1605,6 +1630,14 @@ class MemoryVLA(nn.Module):
             if spatial_valid.ndim != 1 or spatial_valid.numel() != per_tokens.shape[0]:
                 raise ValueError("spatial_valid must have shape [batch_size]")
             valid = spatial_valid.nonzero(as_tuple=True)[0]
+
+            if self.activate_spatial_path:
+                spatial_tokens_for_diffusion = per_tokens.new_zeros(
+                    per_tokens.shape[0],
+                    self.num_spatial_tokens,
+                    self.per_token_size,
+                )
+                spatial_valid_for_diffusion = spatial_valid
 
             if valid.numel() > 0:
                 if depth is None or intrinsics is None or extrinsics is None:
@@ -1628,20 +1661,53 @@ class MemoryVLA(nn.Module):
                     point_mask=valid_masks,
                 )
                 valid_cpu = valid.detach().cpu().tolist()
-                fused_valid = self._fuse_spatial_tokens(
-                    per_tokens=per_tokens[valid],
-                    spatial_tokens=spatial_tokens,
-                    episode_ids=[episode_ids[i] for i in valid_cpu],
-                    timesteps=[timesteps[i] for i in valid_cpu],
-                    instructions=[instructions[i] for i in valid_cpu],
-                    retrieval_image_embeddings=retrieval_image_embeddings[valid],
-                    retrieval_query_embeddings=retrieval_query_embeddings[valid],
-                    positions=positions[valid] if positions is not None else None,
-                )
-                fused_valid = fused_valid.to(
-                    device=per_tokens.device, dtype=per_tokens.dtype
-                )
-                per_tokens = per_tokens.index_copy(0, valid, fused_valid)
+                # if we don't use the spatial path, do the crossattention between per and spatial
+                # else just leave per not cross attention.
+                if not self.activate_spatial_path:
+                    fused_valid = self._fuse_spatial_tokens(
+                        per_tokens=per_tokens[valid],
+                        spatial_tokens=spatial_tokens,
+                        episode_ids=[episode_ids[i] for i in valid_cpu],
+                        timesteps=[timesteps[i] for i in valid_cpu],
+                        instructions=[instructions[i] for i in valid_cpu],
+                        retrieval_image_embeddings=retrieval_image_embeddings[valid],
+                        retrieval_query_embeddings=retrieval_query_embeddings[valid],
+                        positions=positions[valid] if positions is not None else None,
+                    )
+                    fused_valid = fused_valid.to(
+                        device=per_tokens.device, dtype=per_tokens.dtype
+                    )
+                    per_tokens = per_tokens.index_copy(0, valid, fused_valid)
+                else:
+                    spatial_tokens = self.spatial_mem_bank.process_batch(
+                        tokens=spatial_tokens,
+                        episode_ids=[episode_ids[i] for i in valid_cpu],
+                        timesteps=[timesteps[i] for i in valid_cpu],
+                        instructions=[instructions[i] for i in valid_cpu],
+                        retrieval_image_embeddings=(
+                            retrieval_image_embeddings[valid]
+                            if retrieval_image_embeddings is not None
+                            else None
+                        ),
+                        retrieval_query_embeddings=(
+                            retrieval_query_embeddings[valid]
+                            if retrieval_query_embeddings is not None
+                            else None
+                        ),
+                        positions=(
+                            positions[valid] if positions is not None else None
+                        ),
+                    )
+                    spatial_tokens_for_diffusion = (
+                        spatial_tokens_for_diffusion.index_copy(
+                            0,
+                            valid,
+                            spatial_tokens.to(
+                                device=per_tokens.device,
+                                dtype=per_tokens.dtype,
+                            ),
+                        )
+                    )
 
         if self.use_episodic:
             for i in range(len(episode_ids)):
@@ -1650,6 +1716,7 @@ class MemoryVLA(nn.Module):
                         episode_id=int(torch.as_tensor(episode_ids[i]).item()),
                         success=bool(torch.as_tensor(episode_successes[i]).item()),
                     )
+
         # Repeat 'actions' 'repeated_diffusion_steps' times, resulting in [repeated_diffusion_steps*B, T, D]
         actions_future = actions[:, -(self.future_action_window_size+1):, :]
         actions_repeated = actions_future.repeat(repeated_diffusion_steps, 1, 1)
@@ -1660,11 +1727,23 @@ class MemoryVLA(nn.Module):
         per_tokens_repeated = per_tokens.repeat(
             repeated_diffusion_steps, 1, 1)
 
+        spatial_tokens_repeated = None
+        spatial_valid_repeated = None
+        if self.activate_spatial_path:
+            spatial_tokens_repeated = spatial_tokens_for_diffusion.repeat(
+                repeated_diffusion_steps, 1, 1
+            )
+            spatial_valid_repeated = spatial_valid_for_diffusion.repeat(
+                repeated_diffusion_steps
+            )
+
         # Action model forward and compute loss
         loss = self.action_model.loss(
             actions_repeated,
             cog_tokens_repeated,
             per_tokens_repeated,
+            spatial_token=spatial_tokens_repeated,
+            spatial_valid=spatial_valid_repeated,
         )
 
 
@@ -1957,6 +2036,8 @@ class MemoryVLA(nn.Module):
                 episode_mem_ids=episode_ids,
             )
 
+        spatial_tokens_for_diffusion = None
+        spatial_valid_for_diffusion = None
         if self.use_spatial:
             if depth is None or intrinsics is None or extrinsics is None:
                 raise ValueError(
@@ -1982,16 +2063,37 @@ class MemoryVLA(nn.Module):
                 camera=camera,
                 point_mask=valid_masks,
             )
-            per_tokens = self._fuse_spatial_tokens(
-                per_tokens=per_tokens,
-                spatial_tokens=spatial_tokens,
-                episode_ids=episode_ids,
-                timesteps=timesteps,
-                instructions=[instruction],
-                retrieval_image_embeddings=retrieval_image_embeddings,
-                retrieval_query_embeddings=retrieval_query_embeddings,
-                positions=positions,
-            )
+            if not self.activate_spatial_path:
+                per_tokens = self._fuse_spatial_tokens(
+                    per_tokens=per_tokens,
+                    spatial_tokens=spatial_tokens,
+                    episode_ids=episode_ids,
+                    timesteps=timesteps,
+                    instructions=[instruction],
+                    retrieval_image_embeddings=retrieval_image_embeddings,
+                    retrieval_query_embeddings=retrieval_query_embeddings,
+                    positions=positions,
+                )
+            else:
+                spatial_tokens_for_diffusion = self.spatial_mem_bank.process_batch(
+                        tokens=spatial_tokens,
+                        episode_ids=episode_ids,
+                        timesteps=timesteps,
+                        instructions=[instruction],
+                        retrieval_image_embeddings=retrieval_image_embeddings,
+                        retrieval_query_embeddings=retrieval_query_embeddings,
+                        positions=positions
+                    )
+                spatial_tokens_for_diffusion = spatial_tokens_for_diffusion.to(
+                    device=per_tokens.device,
+                    dtype=per_tokens.dtype,
+                )
+                spatial_valid_for_diffusion = torch.ones(
+                    per_tokens.shape[0],
+                    device=per_tokens.device,
+                    dtype=torch.bool,
+                )
+
 
         self.cur_timestep += 1
 
@@ -2013,10 +2115,20 @@ class MemoryVLA(nn.Module):
             model_kwargs = dict(z=z, cfg_scale=cfg_scale)
             sample_fn = self.action_model.net.forward_with_cfg
             model_kwargs.update({'per_token': per_tokens.repeat(2, 1, 1)})  # Repeat for unconditioned and conditioned samples
+            if self.activate_spatial_path:
+                model_kwargs.update({
+                    'spatial_token': spatial_tokens_for_diffusion.repeat(2, 1, 1),
+                    'spatial_valid': spatial_valid_for_diffusion.repeat(2),
+                })
         else:
             model_kwargs = dict(z=cog_tokens)
             sample_fn = self.action_model.net.forward
             model_kwargs.update({'per_token': per_tokens})
+            if self.activate_spatial_path:
+                model_kwargs.update({
+                    'spatial_token': spatial_tokens_for_diffusion,
+                    'spatial_valid': spatial_valid_for_diffusion,
+                })
 
         # DDIM Sampling
         if use_ddim and num_ddim_steps is not None:

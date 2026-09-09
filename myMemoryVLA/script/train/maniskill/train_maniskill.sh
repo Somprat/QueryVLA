@@ -19,6 +19,7 @@ run_root_dir="${RUN_ROOT_DIR:-./log/maniskill}"
 experiment_mode="${EXPERIMENT_MODE:-full}"
 freeze_vlm="${FREEZE_VLM:-true}"
 freeze_action_model="${FREEZE_ACTION_MODEL:-true}"
+activate_spatial_path="${ACTIVATE_SPATIAL_PATH:-false}"
 if [[ "${freeze_vlm}" == "true" && "${freeze_action_model}" == "true" ]]; then
     scope_tag="frozen_vlm_action"
 elif [[ "${freeze_vlm}" == "true" ]]; then
@@ -41,9 +42,9 @@ if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" &
     exit 1
 fi
 
-for boolean_value in "${freeze_vlm}" "${freeze_action_model}" "${dry_run}"; do
+for boolean_value in "${freeze_vlm}" "${freeze_action_model}" "${activate_spatial_path}" "${dry_run}"; do
     if [[ "${boolean_value}" != "true" && "${boolean_value}" != "false" ]]; then
-        echo "FREEZE_VLM, FREEZE_ACTION_MODEL, and DRY_RUN must be true or false" >&2
+        echo "FREEZE_VLM, FREEZE_ACTION_MODEL, ACTIVATE_SPATIAL_PATH, and DRY_RUN must be true or false" >&2
         exit 1
     fi
 done
@@ -84,6 +85,7 @@ train_command=(
     --experiment_mode "${experiment_mode}"
     --freeze_vlm "${freeze_vlm}"
     --freeze_action_model "${freeze_action_model}"
+    --activate_spatial_path "${activate_spatial_path}"
     --image_aug "${IMAGE_AUG:-true}"
     --save_interval "${save_interval}"
     --repeated_diffusion_steps "${DIFFUSION_STEPS:-4}"
