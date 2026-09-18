@@ -92,6 +92,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True, help="Output .pt failure bank")
     parser.add_argument("--episodes-per-task", type=int, default=10)
     parser.add_argument("--max-episode-steps", type=int, default=80)
+    parser.add_argument(
+        "--max-failure-memories",
+        type=int,
+        default=512,
+        help="Maximum diagnosed failures retained in the output bank.",
+    )
     parser.add_argument("--seed", type=int, default=100_000)
     parser.add_argument("--task", choices=("all", *TRAINING_TASKS), default="all")
     parser.add_argument("--experiment-mode", default="full")
@@ -101,13 +107,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     os.environ.setdefault("DISPLAY", "")
     args = parse_args()
-    if args.episodes_per_task < 1 or args.max_episode_steps < 1:
-        raise ValueError("--episodes-per-task and --max-episode-steps must be positive")
+    if min(args.episodes_per_task, args.max_episode_steps, args.max_failure_memories) < 1:
+        raise ValueError("episode and failure-bank limits must be positive")
 
     policy = VLAInference(
         saved_model_path=args.checkpoint,
         policy_setup="widowx_bridge",
         experiment_mode=args.experiment_mode,
+        failure_bank_max_entries=args.max_failure_memories,
     )
     # Collection starts with an empty failure bank.  This prevents a bank from
     # a previous run from silently contaminating this training-only artifact.

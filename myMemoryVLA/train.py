@@ -89,6 +89,7 @@ class TrainConfig:
     modality_weights_index:int = 1
     episodic_max_steps: int = 10
     episodic_top_k: int = 2
+    failure_bank_max_entries: int = 512
     # Collected from training-task rollouts only; this is rollout data, not a
     # model-weight checkpoint, so it is loaded separately.
     failure_bank_path: Optional[Path] = None

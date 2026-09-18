@@ -17,6 +17,7 @@ batch_size="${BATCH_SIZE:-1}"
 global_batch_size="${GLOBAL_BATCH_SIZE:-8}"
 max_steps="${MAX_STEPS:-20000}"
 save_interval="${SAVE_INTERVAL:-2500}"
+failure_bank_max_entries="${FAILURE_BANK_MAX_ENTRIES:-512}"
 hf_token="${HF_TOKEN:-YOUR_HF_TOKEN}"
 
 if [[ ! -x "${python_bin}" ]]; then
@@ -51,4 +52,5 @@ fi
   --freeze_vlm true \
   --freeze_action_model true \
   --failure_bank_path "${FAILURE_BANK}" \
+  --failure_bank_max_entries "${failure_bank_max_entries}" \
   --failure_fusion_only true

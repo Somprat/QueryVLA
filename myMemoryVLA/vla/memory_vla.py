@@ -996,6 +996,7 @@ class MemoryVLA(nn.Module):
         modality_weights_index: int = 1,
         episodic_max_steps: int = 10,
         episodic_top_k: int = 2,
+        failure_bank_max_entries: Optional[int] = None,
         failure_bank_path: Optional[Union[str, Path]] = None,
         failure_fusion_only: bool = False,
 
@@ -1070,6 +1071,11 @@ class MemoryVLA(nn.Module):
             raise ValueError("episodic_top_k cannot exceed episodic_max_steps")
         self.episodic_max_steps = episodic_max_steps
         self.episodic_top_k = episodic_top_k
+        self.failure_bank_max_entries = (
+            max_steps if failure_bank_max_entries is None else failure_bank_max_entries
+        )
+        if self.failure_bank_max_entries < 1:
+            raise ValueError("failure_bank_max_entries must be at least 1")
 
         
 
@@ -1149,7 +1155,7 @@ class MemoryVLA(nn.Module):
             query_retrieval_top_k = self.episodic_top_k)
 
         self.fail_episodic_bank = FailedEpisodicMemBank(
-            max_steps=self.max_steps,
+            max_steps=self.failure_bank_max_entries,
             top_k=self.top_k,
             dataloader_type=self.dataloader_type,
             group_size=self.group_size,
