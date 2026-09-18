@@ -98,8 +98,8 @@ class VLAInference:
             "*** memory settings: "
             f"query_mode={self.vla.query_retrieval_mode}, "
             f"query_top_k={self.vla.query_retrieval_top_k}, "
-            f"episodic_max_steps={self.vla.episodic_bank.max_steps}, "
-            f"episodic_top_k={self.vla.episodic_bank.top_k} ***"
+            f"episodic_max_steps={self.vla.success_episodic_bank.max_steps}, "
+            f"episodic_top_k={self.vla.success_episodic_bank.top_k} ***"
         )
 
         dtype = torch.bfloat16 if use_bf16 else torch.float32
@@ -152,8 +152,8 @@ class VLAInference:
         self.extrinsic_history.append(extrinsic)
         self.num_extrinsic_history = min(self.num_extrinsic_history+1, self.horizon)
 
-    def finish_episode(self, success):
-        self.vla.finish_episode(success)
+    def finish_episode(self, success, frames=None):
+        self.vla.finish_episode(success, frames=frames)
 
     def reset(self, task_description: str) -> None:
         self.task_description = task_description

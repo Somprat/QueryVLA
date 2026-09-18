@@ -5,22 +5,24 @@ import torch.nn.functional as F
 from typing import Optional
 import torch.nn as nn
 from typing import Any
+from pathlib import Path
 
-# Main memoryVLA integration
-# 1. Initialize. at the beginning. Never reset
-# 2. The begining of each episode, do the start ep (append the instruction and scene embedding)
-# 3. In the beginning, get top k most similar. 
-# 4. For each timestep in the episode do the cross attention with the current observation
-# 5. At the end, do the summarize + append the success, cog and per
+# Failed Episode Implementation
+# 1. change the name of the current episodic bank to successful: done!
+# 2. create the failed episode
+# 3. figure out how to do the cross attention
 
 
 @dataclass
 class MemoryUnit:
     instruction_embedding: str
     scene_embedding: torch.tensor
-    success: bool
+    success: Optional[bool]
     cog_mem_bank: Any
     per_mem_bank: Any
+    failure_diagnosis: Optional[dict[str, Any]] = None
+    failure_start_timestep: Optional[int] = None
+    failure_end_timestep: Optional[int] = None
 
 
 @dataclass
@@ -34,7 +36,7 @@ class BankEntry:
 
 
 
-class EpisodicMemBank(nn.Module):
+class SuccessEpisodicMemBank(nn.Module):
     def __init__(self, max_steps: int = 5,
                  kick_method: str = "fifo",
                  top_k: int = 4,
@@ -85,7 +87,7 @@ class EpisodicMemBank(nn.Module):
         # design like a function that takes in that episodes' cog mem bank
 
 
-        
+
         self.bank = {}
 
         self.episode_id = 1
@@ -124,7 +126,7 @@ class EpisodicMemBank(nn.Module):
         memory_unit = MemoryUnit(
             instruction_embedding=text_outputs,
             scene_embedding=image_outputs,
-            success=True,
+            success=None,
             cog_mem_bank=None,
             per_mem_bank=None
         )
@@ -171,8 +173,6 @@ class EpisodicMemBank(nn.Module):
                 f"Cannot finish unknown episodic-memory episode {completed_episode_id}"
             )
         if not success:
-            # Failure rollouts are not positive demonstrations. Do not let them
-            # consume FIFO capacity or become future retrieval context.
             self.bank.pop(completed_episode_id, None)
             return
 
@@ -183,9 +183,10 @@ class EpisodicMemBank(nn.Module):
             self.bank.pop(completed_episode_id, None)
             return
 
-        self.bank[completed_episode_id].success = True
+        self.bank[completed_episode_id].success = success
         self.bank[completed_episode_id].cog_mem_bank = summarized_cog
         self.bank[completed_episode_id].per_mem_bank = summarized_per
+
 
 
     
@@ -240,7 +241,11 @@ class EpisodicMemBank(nn.Module):
         text_inputs = self._to_clip_device(text_inputs)
         current_embedding = self.clip_model.get_text_features(**text_inputs).flatten()
 
-        episode_embedding = memory_unit.instruction_embedding.flatten()
+        # Persistent-bank artifacts are loaded on CPU; retrieval runs wherever
+        # the frozen CLIP model currently lives.
+        episode_embedding = memory_unit.instruction_embedding.flatten().to(
+            current_embedding.device
+        )
 
         score = F.cosine_similarity(current_embedding, episode_embedding, dim=0)
         return _clamp01(score)
@@ -254,7 +259,9 @@ class EpisodicMemBank(nn.Module):
         image_inputs = self._to_clip_device(image_inputs)
         current_embedding = self.clip_model.get_image_features(**image_inputs).float().detach().flatten()
 
-        episode_embedding = memory_unit.scene_embedding.float().detach().flatten()
+        episode_embedding = memory_unit.scene_embedding.float().detach().flatten().to(
+            current_embedding.device
+        )
         score = F.cosine_similarity(current_embedding, episode_embedding, dim=0)
 
         return _clamp01(score)
@@ -274,6 +281,7 @@ class EpisodicMemBank(nn.Module):
             # not-yet-completed rollout as positive context.
             if not memory_unit.success:
                 continue
+
             if memory_unit.cog_mem_bank is None or memory_unit.per_mem_bank is None:
                 continue
             semantic_score = self.instruction_score(memory_unit, current_instruction)
@@ -288,3 +296,180 @@ class EpisodicMemBank(nn.Module):
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
+
+
+
+class FailedEpisodicMemBank(SuccessEpisodicMemBank):
+    def __init__(self,
+            max_steps: int = 5,
+            kick_method: str = "fifo",
+            top_k: int = 4,
+            novelty_threshold = 0.8,
+            dataloader_type: str = "stream",
+            group_size: int = 16,
+            token_size: int = 256,
+            mem_length: int = 16,
+            retrieval_layers: int = 2,
+            use_timestep_pe: bool = True,
+            fusion_type: str = 'gate',
+            consolidate_type: str = 'tome',
+            update_fused: bool = False,
+            query_retrieval_mode: str = "off",
+            query_retrieval_top_k: int = 4
+            ):
+        super().__init__(
+            max_steps=max_steps,
+            kick_method=kick_method,
+            top_k=top_k,
+            novelty_threshold=novelty_threshold,
+            dataloader_type=dataloader_type,
+            group_size=group_size,
+            token_size=token_size,
+            mem_length=mem_length,
+            retrieval_layers=retrieval_layers,
+            use_timestep_pe=use_timestep_pe,
+            fusion_type=fusion_type,
+            consolidate_type=consolidate_type,
+            update_fused=update_fused,
+            query_retrieval_mode=query_retrieval_mode,
+            query_retrieval_top_k=query_retrieval_top_k
+        )
+
+
+    def retrieve(self,
+                    current_instruction: str,
+                    initial_frame: torch.Tensor):
+        # comparing the episode instruction
+        # comparing the initial scene embedding.
+
+        scores = []
+        for episode_id, memory_unit in self.bank.items():
+            # Demonstrations used for training are successful. Match that
+            # distribution at evaluation time and never retrieve a failed or
+            # not-yet-completed rollout as positive context.
+            if memory_unit.success:
+                continue
+
+            if memory_unit.cog_mem_bank is None or memory_unit.per_mem_bank is None:
+                continue
+            semantic_score = self.instruction_score(memory_unit, current_instruction)
+            image_score = self.image_score(memory_unit, initial_frame)
+
+            total_score = (semantic_score + image_score)/2
+            scores.append((total_score, episode_id))
+        scores.sort(key=lambda item: item[0], reverse=True)
+
+        return [self.bank[eid] for _, eid in scores[:self.top_k]]
+    def end_episode(self,
+                    success: bool,
+                    episode_cog_banks: list,
+                    episode_per_banks: list,
+                    episode_id: Optional[int] = None,
+                    failure_diagnosis: Optional[dict[str, Any]] = None,
+                    failure_start_timestep: Optional[int] = None,
+                    failure_end_timestep: Optional[int] = None):
+        completed_episode_id = self.episode_id - 1 if episode_id is None else episode_id
+        if completed_episode_id not in self.bank:
+            raise KeyError(
+                f"Cannot finish unknown episodic-memory episode {completed_episode_id}"
+            )
+        if success:
+            self.bank.pop(completed_episode_id, None)
+            return
+
+        summarized_cog = self.summarize_mem_bank(episode_cog_banks)
+        summarized_per = self.summarize_mem_bank(episode_per_banks)
+
+        if summarized_cog is None or summarized_per is None:
+            self.bank.pop(completed_episode_id, None)
+            return
+
+        self.bank[completed_episode_id].success = success
+        self.bank[completed_episode_id].cog_mem_bank = summarized_cog
+        self.bank[completed_episode_id].per_mem_bank = summarized_per
+        self.bank[completed_episode_id].failure_diagnosis = failure_diagnosis
+        self.bank[completed_episode_id].failure_start_timestep = failure_start_timestep
+        self.bank[completed_episode_id].failure_end_timestep = failure_end_timestep
+
+    @staticmethod
+    def _serialize_entry(entry: BankEntry) -> dict[str, Any]:
+        """Make one stored summary safe to move between processes/checkpoints."""
+        def cpu_tensor(value):
+            if value is None:
+                return None
+            return torch.as_tensor(value).detach().cpu().clone()
+
+        return {
+            "timestep": cpu_tensor(entry.timestep),
+            "feat": cpu_tensor(entry.feat),
+            "image_embedding": cpu_tensor(entry.image_embedding),
+            "task_tags": tuple(entry.task_tags),
+            "position": cpu_tensor(entry.position),
+        }
+
+    def save_bank(self, path: str | Path) -> None:
+        """Save only failure summaries, not CLIP/model weights.
+
+        The bank is intentionally a separate artifact from a parameter
+        checkpoint: it is rollout data, while checkpoints contain learned
+        weights.  Keeping them separate also makes the collection split easy
+        to audit.
+        """
+        entries = []
+        for episode_id, unit in self.bank.items():
+            if unit.cog_mem_bank is None or unit.per_mem_bank is None:
+                continue
+            entries.append(
+                {
+                    "episode_id": int(episode_id),
+                    "instruction_embedding": unit.instruction_embedding.detach().cpu().clone(),
+                    "scene_embedding": unit.scene_embedding.detach().cpu().clone(),
+                    "success": bool(unit.success),
+                    "cog_mem_bank": self._serialize_entry(unit.cog_mem_bank),
+                    "per_mem_bank": self._serialize_entry(unit.per_mem_bank),
+                    "failure_diagnosis": unit.failure_diagnosis,
+                    "failure_start_timestep": unit.failure_start_timestep,
+                    "failure_end_timestep": unit.failure_end_timestep,
+                }
+            )
+        torch.save(
+            {"format": "memoryvla_failure_bank_v1", "entries": entries},
+            Path(path),
+        )
+
+    @staticmethod
+    def _deserialize_entry(payload: dict[str, Any]) -> BankEntry:
+        return BankEntry(
+            timestep=payload["timestep"],
+            feat=payload["feat"],
+            image_embedding=payload["image_embedding"],
+            task_tags=tuple(payload["task_tags"]),
+            position=payload.get("position"),
+        )
+
+    def load_bank(self, path: str | Path) -> int:
+        """Replace the in-memory failure bank with a saved collection."""
+        try:
+            payload = torch.load(Path(path), map_location="cpu", weights_only=False)
+        except TypeError:  # PyTorch versions before the weights_only argument.
+            payload = torch.load(Path(path), map_location="cpu")
+        if payload.get("format") != "memoryvla_failure_bank_v1":
+            raise ValueError(f"Unsupported failure-bank artifact: {path}")
+
+        self.bank.clear()
+        highest_id = 0
+        for record in payload["entries"]:
+            episode_id = int(record["episode_id"])
+            self.bank[episode_id] = MemoryUnit(
+                instruction_embedding=record["instruction_embedding"],
+                scene_embedding=record["scene_embedding"],
+                success=bool(record["success"]),
+                cog_mem_bank=self._deserialize_entry(record["cog_mem_bank"]),
+                per_mem_bank=self._deserialize_entry(record["per_mem_bank"]),
+                failure_diagnosis=record.get("failure_diagnosis"),
+                failure_start_timestep=record.get("failure_start_timestep"),
+                failure_end_timestep=record.get("failure_end_timestep"),
+            )
+            highest_id = max(highest_id, episode_id)
+        self.episode_id = highest_id + 1
+        return len(self.bank)

@@ -42,7 +42,7 @@ bs="${BATCH_SIZE:-1}"
 global_batch_size="${GLOBAL_BATCH_SIZE:-8}"
 shuffle_buffer_size=1_024 # stream loader buffers decoded episodes, not individual frames
 
-max_steps="${MAX_STEPS:-50000}"
+max_steps="${MAX_STEPS:-20000}"
 save_interval="${SAVE_INTERVAL:-2500}"
 dp_step=4
 future_action_window_size=15
@@ -54,6 +54,8 @@ for value_name in n_gpu bs global_batch_size max_steps save_interval; do
     exit 1
   fi
 done
+
+
 if (( global_batch_size % (n_gpu * bs) != 0 )); then
   echo "GLOBAL_BATCH_SIZE must be divisible by N_GPU * BATCH_SIZE." >&2
   exit 1

@@ -1,6 +1,6 @@
 import torch
 
-from vla.episodic.episodic_bank import BankEntry, EpisodicMemBank, MemoryUnit
+from vla.episodic.episodic_bank import BankEntry, SuccessEpisodicMemBank, MemoryUnit
 from vla.memory_vla import GateFusion
 
 
@@ -38,7 +38,7 @@ def test_new_fusion_gate_initially_preserves_pretrained_input() -> None:
 
 
 def test_episodic_retrieval_excludes_failures_and_incomplete_rollouts() -> None:
-    bank = EpisodicMemBank.__new__(EpisodicMemBank)
+    bank = SuccessEpisodicMemBank.__new__(SuccessEpisodicMemBank)
     torch.nn.Module.__init__(bank)
     bank.top_k = 2
     bank.bank = {
@@ -55,7 +55,7 @@ def test_episodic_retrieval_excludes_failures_and_incomplete_rollouts() -> None:
 
 
 def test_failed_episode_is_removed_instead_of_consuming_capacity() -> None:
-    bank = EpisodicMemBank.__new__(EpisodicMemBank)
+    bank = SuccessEpisodicMemBank.__new__(SuccessEpisodicMemBank)
     torch.nn.Module.__init__(bank)
     bank.episode_id = 2
     bank.bank = {1: _unit(score=0.5, success=True, complete=False)}
@@ -66,7 +66,7 @@ def test_failed_episode_is_removed_instead_of_consuming_capacity() -> None:
 
 
 def test_episode_completion_uses_the_explicit_episode_id() -> None:
-    bank = EpisodicMemBank.__new__(EpisodicMemBank)
+    bank = SuccessEpisodicMemBank.__new__(SuccessEpisodicMemBank)
     torch.nn.Module.__init__(bank)
     bank.episode_id = 3
     bank.bank = {

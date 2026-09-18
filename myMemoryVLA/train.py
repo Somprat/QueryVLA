@@ -89,6 +89,11 @@ class TrainConfig:
     modality_weights_index:int = 1
     episodic_max_steps: int = 10
     episodic_top_k: int = 2
+    # Collected from training-task rollouts only; this is rollout data, not a
+    # model-weight checkpoint, so it is loaded separately.
+    failure_bank_path: Optional[Path] = None
+    # Train only cog_fail_fusion and per_fail_fusion with the usual action loss.
+    failure_fusion_only: bool = False
 
     # the same thing as per_token_size in memory_vla.py
     # spatial_token_size: int = 256
@@ -235,6 +240,7 @@ def train(cfg: TrainConfig) -> None:
         "Training scope =>> "
         f"experiment_mode={cfg.experiment_mode}, freeze_vlm={cfg.freeze_vlm}, "
         f"freeze_action_model={cfg.freeze_action_model}, "
+        f"failure_fusion_only={cfg.failure_fusion_only}, "
         f"activate_spatial_path={cfg.activate_spatial_path}, "
         f"load_depth={cfg.load_depth}, "
         f"trainable_modules={vla.trainable_module_keys}"
