@@ -17,15 +17,29 @@ policy timestep. A policy timestep is one robot action decision; it is not a
 video frame number or a number of seconds.
 
 Identify the smallest timestep range in which the failure becomes observable.
-Return only JSON using this schema:
+Use only one of the displayed policy-timestep labels for each bound. Do not
+copy a placeholder value from this instruction. Timestep 0 is valid only when
+the failure is visibly present in the first observation. If the task merely
+fails to complete by the end of the episode, locate the failure at the final
+observations rather than at timestep 0.
+
+Return only JSON in this format:
 {
   "failed": true,
-  "failure_start_timestep": 0,
-  "failure_end_timestep": 1,
+  "failure_start_timestep": <one displayed label>,
+  "failure_end_timestep": <one displayed label>,
   "failure_type": "",
   "explanation": "",
   "confidence": 0.0
 }
+""".strip()
+
+
+INITIAL_ONLY_RETRY_PROMPT = """
+Your previous bounds were 0–0. Re-check every labeled observation. Do not use
+0–0 unless the first observation itself visibly contains the failure. For a
+task that only fails to complete, choose the final labeled observation(s).
+Return the same JSON format and use only displayed labels.
 """.strip()
 
 
@@ -69,14 +83,64 @@ def diagnose_failure_with_robofac(
                 "image_url": {"url": _frame_data_url(frame), "detail": "low"},
             }
         )
-    content.append({"type": "text", "text": ROBOFAC_PROMPT})
+    sampled_timesteps = [timestep for timestep, _ in sampled]
+    content.append(
+        {
+            "type": "text",
+            "text": (
+                f"Displayed policy-timestep labels: {sampled_timesteps}.\n\n"
+                f"{ROBOFAC_PROMPT}"
+            ),
+        }
+    )
 
     base_url = os.environ.get("ROBOFAC_URL", "http://127.0.0.1:8000/v1")
     model_name = os.environ.get("ROBOFAC_MODEL", "MINT-SJTU/RoboFAC-7B")
+    text = _request_robofac(
+        base_url, model_name, [{"role": "user", "content": content}], timeout_seconds
+    )
+    diagnosis = parse_failure_diagnosis(text)
+    _reject_invalid_bounds(diagnosis, sampled_timesteps)
+
+    # A repeated 0--0 with generic text is usually the JSON template being
+    # copied, not a localized failure. Ask once more before discarding it.
+    if (
+        len(sampled_timesteps) > 1
+        and diagnosis["failed"]
+        and diagnosis["failure_start_timestep"] == sampled_timesteps[0]
+        and diagnosis["failure_end_timestep"] == sampled_timesteps[0]
+    ):
+        retry_messages = [
+            {"role": "user", "content": content},
+            {"role": "assistant", "content": text},
+            {"role": "user", "content": INITIAL_ONLY_RETRY_PROMPT},
+        ]
+        retry_text = _request_robofac(
+            base_url, model_name, retry_messages, timeout_seconds
+        )
+        retry_diagnosis = parse_failure_diagnosis(retry_text)
+        _reject_invalid_bounds(retry_diagnosis, sampled_timesteps)
+        if (
+            retry_diagnosis["failed"]
+            and retry_diagnosis["failure_start_timestep"] == sampled_timesteps[0]
+            and retry_diagnosis["failure_end_timestep"] == sampled_timesteps[0]
+        ):
+            retry_diagnosis["failed"] = False
+            retry_diagnosis["rejected_reason"] = "repeated_initial_only_diagnosis"
+        diagnosis = retry_diagnosis
+        text = retry_text
+
+    diagnosis["sampled_timesteps"] = sampled_timesteps
+    diagnosis["raw_response"] = text
+
+    return diagnosis
+
+
+def _request_robofac(base_url, model_name, messages, timeout_seconds) -> str:
     payload = json.dumps(
         {
             "model": model_name,
-            "messages": [{"role": "user", "content": content}],
+            "messages": messages,
             "response_format": {"type": "text"},
             "temperature": 0,
         }
@@ -87,7 +151,6 @@ def diagnose_failure_with_robofac(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-
     try:
         with request.urlopen(http_request, timeout=timeout_seconds) as response:
             response_body = json.loads(response.read().decode("utf-8"))
@@ -96,31 +159,10 @@ def diagnose_failure_with_robofac(
             "RoboFAC diagnosis failed. Start its vLLM OpenAI-compatible server "
             "or set ROBOFAC_URL to an existing server."
         ) from exc
-
     try:
-        text = response_body["choices"][0]["message"]["content"]
+        return response_body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError(f"Unexpected RoboFAC response: {response_body!r}") from exc
-
-    diagnosis = parse_failure_diagnosis(text)
-    sampled_timesteps = [timestep for timestep, _ in sampled]
-    diagnosis["sampled_timesteps"] = sampled_timesteps
-    diagnosis["raw_response"] = text
-
-    if diagnosis["failed"]:
-        diagnosis["failure_start_timestep"] = _nearest_sampled_timestep(
-            diagnosis["failure_start_timestep"], sampled_timesteps
-        )
-        diagnosis["failure_end_timestep"] = _nearest_sampled_timestep(
-            diagnosis["failure_end_timestep"], sampled_timesteps
-        )
-        if diagnosis["failure_start_timestep"] > diagnosis["failure_end_timestep"]:
-            diagnosis["failure_start_timestep"], diagnosis["failure_end_timestep"] = (
-                diagnosis["failure_end_timestep"],
-                diagnosis["failure_start_timestep"],
-            )
-
-    return diagnosis
 
 
 def parse_failure_diagnosis(text: str) -> dict[str, Any]:
@@ -153,5 +195,32 @@ def parse_failure_diagnosis(text: str) -> dict[str, Any]:
     return diagnosis
 
 
-def _nearest_sampled_timestep(value: int, sampled_timesteps: Sequence[int]) -> int:
-    return min(sampled_timesteps, key=lambda timestep: abs(timestep - int(value)))
+def _require_sampled_bounds(
+    diagnosis: dict[str, Any], sampled_timesteps: Sequence[int]
+) -> None:
+    if not diagnosis["failed"]:
+        return
+    start = diagnosis["failure_start_timestep"]
+    end = diagnosis["failure_end_timestep"]
+    if start not in sampled_timesteps or end not in sampled_timesteps:
+        raise ValueError(
+            "RoboFAC must return exact displayed timestep labels; got "
+            f"{start}--{end}, expected one of {list(sampled_timesteps)}"
+        )
+    if start > end:
+        diagnosis["failure_start_timestep"], diagnosis["failure_end_timestep"] = (
+            end,
+            start,
+        )
+
+
+def _reject_invalid_bounds(
+    diagnosis: dict[str, Any], sampled_timesteps: Sequence[int]
+) -> None:
+    try:
+        _require_sampled_bounds(diagnosis, sampled_timesteps)
+    except ValueError as exc:
+        # Do not let one malformed VLM answer abort a long collection run or
+        # silently snap an invalid value to timestep 0.
+        diagnosis["failed"] = False
+        diagnosis["rejected_reason"] = str(exc)
