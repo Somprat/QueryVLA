@@ -153,7 +153,7 @@ class VLAInference:
         self.num_extrinsic_history = min(self.num_extrinsic_history+1, self.horizon)
 
     def finish_episode(self, success, frames=None):
-        self.vla.finish_episode(success, frames=frames)
+        return self.vla.finish_episode(success, frames=frames)
 
     def reset(self, task_description: str) -> None:
         self.task_description = task_description

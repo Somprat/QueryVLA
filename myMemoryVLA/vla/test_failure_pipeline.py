@@ -108,7 +108,7 @@ def test_failed_episode_stores_only_timestep_aligned_window() -> None:
     model.use_episodic = True
     model.active_ep_id = 7
     model.active_ep_contexts = {
-        7: {"bank_episode_id": 11, "fail_episode_id": 12}
+        7: {"bank_episode_id": 11, "fail_episode_id": 12, "instruction": "put carrot in sink"}
     }
     model.episode_recordings = {7: {"cog": [], "per": []}}
     model.fail_active_ep_contexts = {12: {"cog": None, "per": None}}
@@ -122,17 +122,22 @@ def test_failed_episode_stores_only_timestep_aligned_window() -> None:
         bank={11: object()}, max_steps=10, kick_memory=lambda: None
     )
     model.fail_episodic_bank = _FailedBank()
-    model._diagnose_failed_episode = lambda frames: {
-        "failed": True,
-        "failure_start_timestep": 3,
-        "failure_end_timestep": 5,
-    }
+    def diagnose(frames, task_instruction=None):
+        assert task_instruction == "put carrot in sink"
+        return {
+            "failed": True,
+            "failure_start_timestep": 3,
+            "failure_end_timestep": 5,
+        }
+
+    model._diagnose_failed_episode = diagnose
 
     frames = [np.zeros((2, 2, 3), dtype=np.uint8) for _ in range(10)]
-    model.finish_episode(False, frames=frames)
+    returned_diagnosis = model.finish_episode(False, frames=frames)
 
     completed = model.fail_episodic_bank.completed
     assert completed is not None
+    assert returned_diagnosis is completed["failure_diagnosis"]
     stored_timesteps = [
         int(entry.timestep) for entry in completed["episode_cog_banks"]
     ]

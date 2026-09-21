@@ -1,0 +1,233 @@
+[
+  {
+    "episode_id": 1,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cube. The robot arm's ",
+    "explanation": "Position deviation, misalignment during the reach for the cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly behind (X",
+    "confidence": 0.012578,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 2,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cube. The robot arm's ",
+    "explanation": "Position deviation, misalignment during the reach for the cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly behind (X",
+    "confidence": 0.012562,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 3,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cube. The robot arm's ",
+    "explanation": "Position deviation, misalignment during the reach for the cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly behind (X",
+    "confidence": 0.012578,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 4,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cube. The robot arm's ",
+    "explanation": "Position deviation, misalignment during the reach for the cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly behind (X",
+    "confidence": 0.012562,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 5,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the green cube. The robot,",
+    "explanation": "Position deviation, misalignment during the reach for the green cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly off",
+    "confidence": 0.0,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 6,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the green cube. The robot,",
+    "explanation": "Position deviation, misalignment during the reach for the green cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube and continue with the subsequent steps of placing it in the safe. The position deviation in ",
+    "confidence": 0.012578,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 7,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cube. The robot arm's ",
+    "explanation": "Position deviation, misalignment during the reach for the cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly behind (X",
+    "confidence": 0.012578,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 8,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cube. The robot arm's ",
+    "explanation": "Position deviation, misalignment during the reach for the cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly behind (X",
+    "confidence": 0.012562,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 9,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the green cube. The robot,",
+    "explanation": "Position deviation, misalignment during the reach for the green cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube and continue with the subsequent steps of placing it in the box. The position deviation in X",
+    "confidence": 0.012562,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 10,
+    "task_instruction": "put the green cube in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the green cube. The robot,",
+    "explanation": "Position deviation, misalignment during the reach for the green cube. The robot arm did not properly align itself over the green cube, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a failure to securely grasp the cube. The position deviation in the X and Y axes indicates that the end-effector was slightly off",
+    "confidence": 0.0,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 11,
+    "task_instruction": "put the carrot in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the orange. The robot arm,",
+    "explanation": "Position deviation, misalignment during the reach for the orange. The robot arm did not properly align itself over the orange, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, resulting in a position deviation that prevented the robot from successfully completing the task. The robot's inability to reach the correct position,",
+    "confidence": 0.012345,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 12,
+    "task_instruction": "put the carrot in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the orange. The robot arm,",
+    "explanation": "Position deviation, misalignment during the reach for the orange. The robot arm did not properly align itself over the orange, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, which is crucial for successful manipulation tasks. As a result, the robot could not grasp the orange effectively, preventing it from completing the '",
+    "confidence": 0.012345,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 13,
+    "task_instruction": "put the carrot in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cup. The robot arm did",
+    "explanation": "Position deviation, misalignment during the reach for the cup. The robot arm did not properly align itself over the cup, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, which is crucial for successful manipulation tasks. As a result, the robot could not grasp the cup securely, preventing it from completing the subsequent 'L",
+    "confidence": 0.012345,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 14,
+    "task_instruction": "put the carrot in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cup. The robot arm did",
+    "explanation": "Position deviation, misalignment during the reach for the cup. The robot arm did not properly align itself over the cup, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, which is crucial for successful manipulation tasks. As a result, the robot could not grasp the cup securely, preventing it from completing the subsequent 'L",
+    "confidence": 0.012345,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 15,
+    "task_instruction": "put the carrot in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cup stage. The robot's",
+    "explanation": "Position deviation, misalignment during the reach for the cup stage. The robot arm did not properly align itself over the cup, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, which is crucial for successful manipulation tasks. As a result, the robot could not securely grasp the cup, preventing it from completing the task of",
+    "confidence": 0.0,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 16,
+    "task_instruction": "put the carrot in the sink",
+    "failure_type": "Position deviation, misalignment during the reach for the cup. The robot arm did",
+    "explanation": "Position deviation, misalignment during the reach for the cup. The robot arm did not properly align itself over the cup, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not accurately positioned, which is crucial for successful manipulation tasks. As a result, the robot could not grasp the cup securely, preventing it from completing the subsequent 'L",
+    "confidence": 0.012345,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 19,
+    "task_instruction": "stack the yellow cube on the green cube",
+    "failure_type": "Position deviation, grasp failure, alignment error, grasping error, misalignment",
+    "explanation": "Position deviation, grasp failure, alignment error, grasping error, misalignment, The robot arm's gripper did not reach the correct position to successfully grasp the green cube. This resulted in an inability for the robot to lift and move the cube to the target position, leading to a failure in completing the task. The position deviation indicates that the end-effector was slightly off in both X-",
+    "confidence": 0.012345,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 22,
+    "task_instruction": "stack the yellow cube on the green cube",
+    "failure_type": "Position deviation, grasp failure, misalignment, insufficient grasping force, or",
+    "explanation": "Position deviation, grasp failure, misalignment, insufficient grasping force, or position deviation during the grasping stage. The robot arm's gripper did not properly align with the center of the green cube, leading to an unsuccessful grasp. This misalignment indicates that the end-effector was not accurately positioned over the target object, which is crucial for successful manipulation. As a re",
+    "confidence": 0.0,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 28,
+    "task_instruction": "put the spoon on the plate",
+    "failure_type": "Position deviation, misalignment during the grasping stage. The robot arm didnot",
+    "explanation": "Position deviation, misalignment during the grasping stage. The robot arm did not reach the correct position to successfully grasp the knife, leading to an inability to complete the subsequent steps of lifting and moving the knife to the plate. This misalignment indicates that the end-effector was not properly oriented towards the knife, resulting in a failure to execute the grasp effectively. The",
+    "confidence": 0.0,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 32,
+    "task_instruction": "put the spoon on the plate",
+    "failure_type": "Position deviation, misalignment during the grasping stage. The robot arm was in",
+    "explanation": "Position deviation, misalignment during the grasping stage. The robot arm was unable to accurately position itself over the knife, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was not properly oriented towards the knife, resulting in a failure to grasp it securely. The position deviation in the X and Y axes indicates that the end-effector was slightly",
+    "confidence": 0.0,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  },
+  {
+    "episode_id": 34,
+    "task_instruction": "put the spoon on the plate",
+    "failure_type": "Position deviation, grasping error, alignment error, or orientation deviation.Gr",
+    "explanation": "Position deviation, grasping error, alignment error, or orientation deviation.Gr, the robot arm was unable to grasp the knife due to an incorrect positioning of the end-effector relative to the knife. The end-effector was misaligned and did not reach the optimal position necessary for a successful grasp, leading to a failure in completing the task. This misalignment indicates that the robot's path",
+    "confidence": 0.012345,
+    "failure_start_timestep": 0,
+    "failure_end_timestep": 0,
+    "stored_start_timestep": 0,
+    "stored_end_timestep": 2
+  }
+]

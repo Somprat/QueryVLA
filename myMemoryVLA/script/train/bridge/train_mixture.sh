@@ -82,12 +82,14 @@ run_root_dir='./log/bridge_generated'
 run_id="${RUN_ID:-memvla_bridge_${experiment_mode}}"
 
 is_resume=False
-resume_step=0
-resume_epoch=0
+if [[ -n "${RESUME_CHECKPOINT:-}" ]]; then
+  pretrained_ckpt="${RESUME_CHECKPOINT}"
+  is_resume=True
+fi
 
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 "${python_bin}" -m torch.distributed.run --nproc_per_node=${n_gpu} train.py \
-  --pretrained_checkpoint ${pretrained_ckpt} \
+  --pretrained_checkpoint "${pretrained_ckpt}" \
   --vla.type prism-dinosiglip-224px+oxe+diffusion \
   --vla.data_mix ${data_mix} \
   --vla.expected_world_size ${n_gpu} \
@@ -105,8 +107,6 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
   --action_model_type 'DiT-L' \
   --dataloader_type 'stream' \
   --is_resume ${is_resume} \
-  --resume_step ${resume_step} \
-  --resume_epoch ${resume_epoch} \
   --trackers '[jsonl]' \
   --hf_token ${hf_token} \
   --vla.shuffle_buffer_size ${shuffle_buffer_size} \

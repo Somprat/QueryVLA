@@ -1,5 +1,5 @@
 # Locally downloaded and generated datasets
-datasets/
+/datasets/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -106,7 +106,11 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.sample
 .venv
+.venv-*/
 env/
 !third_libs/SimplerEnv/simpler_env/utils/env/
 !third_libs/SimplerEnv/simpler_env/utils/env/*.py
@@ -155,6 +159,16 @@ data/
 
 # Training outputs (checkpoints, metrics, and W&B files)
 log/
+/checkpoints/
+/wandb/
+
+# Generated datasets, failure banks, and episode recordings
+/artifacts/
+
+# Editor and merge backups
+*.orig
+*.rej
+*~
 
 # Reproducible machine-local evaluation state
 .runtime/

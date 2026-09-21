@@ -1456,6 +1456,7 @@ class MemoryVLA(nn.Module):
 
         #write somenotes about these things
         self.active_ep_contexts[episode_id] = {
+            "instruction": instruction,
             "cog": active_ep_cog,
             "per": active_ep_per,
             "bank_episode_id": bank_episode_id,
@@ -1608,8 +1609,10 @@ class MemoryVLA(nn.Module):
                 selected.append(entry)
         return selected
 
-    def _diagnose_failed_episode(self, frames):
-        return diagnose_failure_with_robofac(frames, max_frames=20)
+    def _diagnose_failed_episode(self, frames, task_instruction=None):
+        return diagnose_failure_with_robofac(
+            frames, max_frames=20, task_instruction=task_instruction
+        )
 
     def finish_episode(self, success, frames=None, episode_id=None):
         if not self.use_episodic:
@@ -1643,13 +1646,15 @@ class MemoryVLA(nn.Module):
                 )
                 return
 
-            diagnosis = self._diagnose_failed_episode(frames)
+            diagnosis = self._diagnose_failed_episode(
+                frames, task_instruction=context.get("instruction")
+            )
             if not diagnosis["failed"]:
                 self.fail_episodic_bank.bank.pop(fail_episode_id, None)
                 overwatch.warning(
                     "RoboFAC did not identify an observable failure; failed memory was not stored"
                 )
-                return
+                return diagnosis
 
             context_steps = 2
             start_timestep = max(
@@ -1675,7 +1680,7 @@ class MemoryVLA(nn.Module):
                 overwatch.warning(
                     "No timestep-aligned memory entries matched the RoboFAC failure window"
                 )
-                return
+                return diagnosis
 
             self.fail_episodic_bank.end_episode(
                 success=False,
@@ -1686,6 +1691,7 @@ class MemoryVLA(nn.Module):
                 failure_start_timestep=diagnosis["failure_start_timestep"],
                 failure_end_timestep=diagnosis["failure_end_timestep"],
             )
+            return diagnosis
         except Exception:
             self.fail_episodic_bank.bank.pop(fail_episode_id, None)
             raise
