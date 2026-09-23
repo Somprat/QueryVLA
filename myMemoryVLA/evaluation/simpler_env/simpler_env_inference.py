@@ -59,6 +59,11 @@ def parse_local_args(argv):
     parser.add_argument("--query-retrieval-top-k", type=int, default=None)
     parser.add_argument("--episodic-max-steps", type=int, default=None)
     parser.add_argument("--episodic-top-k", type=int, default=None)
+    parser.add_argument(
+        "--failure-bank-path",
+        default=None,
+        help="Failure-bank .pt artifact produced by collect_failure_bank.py.",
+    )
     return parser.parse_known_args(argv)
 
 
@@ -94,6 +99,8 @@ if __name__ == "__main__":
         cli_args["episodic_max_steps"] = local_args.episodic_max_steps
     if local_args.episodic_top_k is not None:
         cli_args["episodic_top_k"] = local_args.episodic_top_k
+    if local_args.failure_bank_path is not None:
+        cli_args["failure_bank_path"] = local_args.failure_bank_path
     merged_args = deep_update(yaml_args.copy(), cli_args)
     args = Namespace(**merged_args)
     np.random.seed(args.seed)

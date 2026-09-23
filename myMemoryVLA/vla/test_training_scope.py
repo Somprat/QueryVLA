@@ -19,8 +19,9 @@ def _make_model(*, freeze_vlm: bool, freeze_action_model: bool) -> MemoryVLA:
     model.per_compr = nn.Linear(2, 2)
     model.spatial_mem_bank = nn.Linear(2, 2)
     model.spatial_to_per_fusion = nn.Linear(2, 2)
-    model.episodic_bank = nn.Linear(2, 2)
+    model.success_episodic_bank = nn.Linear(2, 2)
     model.action_model = nn.Linear(2, 2)
+    model.activate_spatial_path = False
     model.freeze_vlm = freeze_vlm
     model.freeze_action_model = freeze_action_model
     return model
@@ -40,7 +41,7 @@ def test_freeze_vlm_also_freezes_perceptual_and_cognitive_memory() -> None:
     assert not _is_trainable(model.per_compr)
     assert _is_trainable(model.spatial_mem_bank)
     assert _is_trainable(model.spatial_to_per_fusion)
-    assert _is_trainable(model.episodic_bank)
+    assert _is_trainable(model.success_episodic_bank)
     assert _is_trainable(model.action_model)
 
 
@@ -51,4 +52,4 @@ def test_freeze_action_model_is_independent_of_vlm_scope() -> None:
     assert not _is_trainable(model.action_model)
     assert not model.action_model.training
     assert _is_trainable(model.spatial_mem_bank)
-    assert _is_trainable(model.episodic_bank)
+    assert _is_trainable(model.success_episodic_bank)

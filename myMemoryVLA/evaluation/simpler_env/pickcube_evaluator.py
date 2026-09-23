@@ -34,6 +34,7 @@ def evaluate_pickcube(
 
     model.reset(instruction)
     success = False
+    episode_frames = []
 
     try:
         for timestep in range(max_steps):
@@ -51,6 +52,7 @@ def evaluate_pickcube(
                 env.unwrapped.tcp.pose.p,
                 dtype=np.float32,
             )
+            episode_frames.append(np.asarray(image).copy())
 
             raw_action, action = model.step(
                 image=image,
@@ -99,7 +101,7 @@ def evaluate_pickcube(
                 break
 
     finally:
-        model.finish_episode(success)
+        model.finish_episode(success, frames=episode_frames)
         env.close()
 
     return success

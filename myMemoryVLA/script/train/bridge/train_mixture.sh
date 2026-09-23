@@ -54,6 +54,8 @@ for value_name in n_gpu bs global_batch_size max_steps save_interval; do
     exit 1
   fi
 done
+
+
 if (( global_batch_size % (n_gpu * bs) != 0 )); then
   echo "GLOBAL_BATCH_SIZE must be divisible by N_GPU * BATCH_SIZE." >&2
   exit 1

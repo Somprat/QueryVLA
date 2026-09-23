@@ -15,6 +15,7 @@ import torch.nn.functional as F
 from transformers import LlamaTokenizerFast
 from transformers import CLIPModel, CLIPProcessor
 
+
 from prismatic.models.backbones.llm import LLMBackbone
 from prismatic.models.backbones.vision import VisionBackbone
 from prismatic.models.vlms.prismatic import PrismaticVLM
@@ -23,12 +24,15 @@ from prismatic.util.nn_utils import FusedMLPProjector, LinearProjector, MLPProje
 from .spatial import geometry
 from .spatial.encoder import PointCloudSpatialEncoder as SpatialPointCloudEncoder
 from .spatial import retrieval
-from .episodic.episodic_bank import EpisodicMemBank
+from .episodic.episodic_bank import SuccessEpisodicMemBank, FailedEpisodicMemBank
+from .failure_diagnosis import diagnose_failure_with_robofac
 from .spatial.modal_retrieval import ModalRetrievalQuery, ModalMemoryRecord, ModalMemoryRetriever
+from .episodic.failfusion import FailAwareFusion
 
 from action_model.action_model import ActionModel
 from action_model.models import DiT
 from dataclasses import dataclass
+
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
@@ -415,7 +419,7 @@ class CogMemBank(nn.Module):
             position=stored_position,
             task_tags=task_tags
         ))
-        
+
         # a dictionary keyed by episode ids are appending the memory unit
         # could be like {1: [mem1, mem2], 2: [mem3, mem4], ...}
 
@@ -494,7 +498,7 @@ class CogMemBank(nn.Module):
             # 2) memory retrieval
             working_mem = tokens[i].unsqueeze(0)  # (1, N, D)
 
-            
+
             hist = self.bank.get(eid, [])
             if len(hist) > 0:
                 if self.query_retrieval_mode in {"query", "shuffled", "cosine"}:
@@ -645,6 +649,7 @@ class CogMemBank(nn.Module):
                     if memory.image_embedding is not None
                     else memory.feat.detach().mean(dim=0)
                 ),
+
                 timestamp=self._as_float_timestep(memory.timestep),
                 modality="visual",
                 position=memory.position,
@@ -713,7 +718,22 @@ class CogMemBank(nn.Module):
         return float(timestep)
     
 
-
+    # def __init__(self,
+    #              dataloader_type: str,
+    #              group_size: int,
+    #              token_size: int,
+    #              mem_length: int = 16,
+    #              retrieval_layers: int = 2,
+    #              use_timestep_pe: bool = True,
+    #              fusion_type: str = 'gate',
+    #              consolidate_type: str = 'tome',
+    #              update_fused: bool = False,
+    #              query_retrieval_mode: str = "off",
+    #              query_retrieval_top_k: int = 4,
+    #              use_query_classifier: bool = False,
+    #              modality_weights: dict = MODALITY_SCORES_SWEEP,
+    #              modality_weights_index: int = 1,
+    #              ):
 
 class PerMemBank(CogMemBank):
     modality='per'
@@ -962,7 +982,6 @@ class PointCloudSpatialEncoder(nn.Module):
             point_mask = point_mask.index_select(dim=1, index=indices)
         return points, point_mask
 
-
 class MemoryVLA(nn.Module):
     def __init__(
         self,
@@ -997,6 +1016,9 @@ class MemoryVLA(nn.Module):
         modality_weights_index: int = 1,
         episodic_max_steps: int = 10,
         episodic_top_k: int = 2,
+        failure_bank_max_entries: Optional[int] = None,
+        failure_bank_path: Optional[Union[str, Path]] = None,
+        failure_fusion_only: bool = False,
 
         max_steps: int = 5,
     
@@ -1029,6 +1051,7 @@ class MemoryVLA(nn.Module):
         self.use_spatial = experiment_mode == "full"
         self.freeze_vlm = freeze_vlm
         self.freeze_action_model = freeze_action_model
+        self.failure_fusion_only = failure_fusion_only
         self.future_action_window_size = future_action_window_size
         self.use_ema = use_ema
         self.norm_stats = norm_stats
@@ -1068,6 +1091,11 @@ class MemoryVLA(nn.Module):
             raise ValueError("episodic_top_k cannot exceed episodic_max_steps")
         self.episodic_max_steps = episodic_max_steps
         self.episodic_top_k = episodic_top_k
+        self.failure_bank_max_entries = (
+            max_steps if failure_bank_max_entries is None else failure_bank_max_entries
+        )
+        if self.failure_bank_max_entries < 1:
+            raise ValueError("failure_bank_max_entries must be at least 1")
 
         
 
@@ -1101,6 +1129,7 @@ class MemoryVLA(nn.Module):
             self.query_retrieval_mode if self.use_query else "off"
         )
 
+
         self.cog_mem_bank = CogMemBank(
             dataloader_type=self.dataloader_type,
             group_size=self.group_size,
@@ -1130,20 +1159,41 @@ class MemoryVLA(nn.Module):
             query_retrieval_top_k=self.query_retrieval_top_k,
             modality_weights_index=self.modality_weights_index
         )
-        self.episodic_bank = EpisodicMemBank(max_steps=self.episodic_max_steps,
-                 top_k=self.episodic_top_k,
-                                             
-                 dataloader_type = "stream",
-                 group_size = self.group_size,
-                 token_size = self.token_size,
-                 mem_length = self.mem_length,
-                 retrieval_layers = self.retrieval_layers,
-                 use_timestep_pe = self.use_timestep_pe,
-                 fusion_type = self.fusion_type,
-                 consolidate_type = self.consolidate_type,
-                 update_fused = self.update_fused,
-                 query_retrieval_mode = self.query_retrieval_mode,
-                 query_retrieval_top_k = self.episodic_top_k)
+        self.success_episodic_bank = SuccessEpisodicMemBank(
+            max_steps=self.episodic_max_steps,
+            top_k=self.episodic_top_k,
+            dataloader_type = "stream",
+            group_size = self.group_size,
+            token_size = self.token_size,
+            mem_length = self.mem_length,
+            retrieval_layers = self.retrieval_layers,
+            use_timestep_pe = self.use_timestep_pe,
+            fusion_type = self.fusion_type,
+            consolidate_type = self.consolidate_type,
+            update_fused = self.update_fused,
+            query_retrieval_mode = self.query_retrieval_mode,
+            query_retrieval_top_k = self.episodic_top_k)
+
+        self.fail_episodic_bank = FailedEpisodicMemBank(
+            max_steps=self.failure_bank_max_entries,
+            top_k=self.top_k,
+            dataloader_type=self.dataloader_type,
+            group_size=self.group_size,
+            token_size=self.token_size,
+            mem_length=self.mem_length,
+            retrieval_layers=self.retrieval_layers,
+            use_timestep_pe=self.use_timestep_pe,
+            fusion_type=self.fusion_type,
+            consolidate_type=self.consolidate_type,
+            update_fused=self.update_fused,
+            query_retrieval_mode = self.query_retrieval_mode,
+            query_retrieval_top_k=self.query_retrieval_top_k
+        )
+        if failure_bank_path is not None:
+            loaded_failures = self.fail_episodic_bank.load_bank(failure_bank_path)
+            overwatch.info(
+                f"Loaded {loaded_failures} failure memories from {failure_bank_path}"
+            )
         
         self.spatial_encoder = SpatialEncoder(
             spatial_token_size = self.per_token_size,
@@ -1207,17 +1257,28 @@ class MemoryVLA(nn.Module):
         self.episodic_per_gate = GateFusion(
             self.per_token_size, preserve_first_input=True
         )
+
         self.active_ep_contexts = {}
         self.episode_recordings = {}
+
+        self.fail_active_ep_contexts = {}
+        self.fail_episode_recordings = {}
+
+        self.per_fail_fusion = FailAwareFusion(self.per_token_size)
+        self.cog_fail_fusion = FailAwareFusion(self.cog_token_size)
+
 
         inactive_modules = []
         if not self.use_episodic:
             inactive_modules.extend((
-                self.episodic_bank,
+                self.success_episodic_bank,
+                self.fail_episodic_bank,
                 self.episodic_cog_attn,
                 self.episodic_per_attn,
                 self.episodic_cog_gate,
                 self.episodic_per_gate,
+                self.cog_fail_fusion,
+                self.per_fail_fusion,
             ))
         if not self.use_spatial:
             inactive_modules.extend((
@@ -1299,6 +1360,18 @@ class MemoryVLA(nn.Module):
                 for block in self.action_model.net.blocks:
                     block.spatial_attn.requires_grad_(True)
                     block.spatial_norm.requires_grad_(True)
+        if getattr(self, "failure_fusion_only", False):
+            if not self.use_episodic:
+                raise ValueError(
+                    "failure_fusion_only requires an episodic experiment mode"
+                )
+            # The action loss still trains these adapters, but every policy,
+            # VLM, and successful-memory component remains fixed.
+            for name, module in self.named_children():
+                if name not in {"cog_fail_fusion", "per_fail_fusion"}:
+                    module.requires_grad_(False)
+            self.cog_fail_fusion.requires_grad_(True)
+            self.per_fail_fusion.requires_grad_(True)
         self._refresh_trainable_module_keys()
 
     def train(self, mode: bool = True):
@@ -1358,10 +1431,12 @@ class MemoryVLA(nn.Module):
         )
 
     def _begin_episode(self, images, instruction, episode_id):
-        selected = self.episodic_bank.retrieve(
+        selected = self.success_episodic_bank.retrieve(
             current_instruction=[instruction],
             initial_frame=images
         )
+
+
         if selected:
             active_ep_cog = torch.cat(
                 [memory.cog_mem_bank.feat for memory in selected], dim=0
@@ -1373,36 +1448,82 @@ class MemoryVLA(nn.Module):
         else:
             active_ep_cog=None
             active_ep_per=None
-        bank_episode_id = self.episodic_bank.start_episode(
+
+
+        bank_episode_id = self.success_episodic_bank.start_episode(
             image=images, instruction=[instruction]
         )
 
+        fail_episode_id = self.fail_episodic_bank.start_episode(
+            image=images, instruction=[instruction]
+        )
+
+        failed_selected = self.fail_episodic_bank.retrieve(
+            current_instruction=[instruction],
+            initial_frame=images
+        )
+        if failed_selected:
+            fail_active_ep_cog = torch.cat(
+                [memory.cog_mem_bank.feat for memory in failed_selected], dim=0
+            ).unsqueeze(0)
+            fail_active_ep_per = torch.cat(
+                [memory.per_mem_bank.feat for memory in failed_selected], dim=0
+            ).unsqueeze(0)
+        else:
+            fail_active_ep_cog = None
+            fail_active_ep_per = None
+
+
         #write somenotes about these things
         self.active_ep_contexts[episode_id] = {
+            "instruction": instruction,
             "cog": active_ep_cog,
             "per": active_ep_per,
             "bank_episode_id": bank_episode_id,
+            "fail_episode_id": fail_episode_id
         }
+
         self.episode_recordings[episode_id] = {
+            "cog": [],
+            "per": []
+        }
+
+        self.fail_active_ep_contexts[fail_episode_id] = {
+            "cog": fail_active_ep_cog,
+            "per": fail_active_ep_per
+        }
+
+        self.fail_episode_recordings[episode_id] = {
             "cog": [],
             "per": []
         }
 
 
 
-    # episode_mem_ids here is the ids in the traininig collator so like (4,4,4,5) and coorresponds with timesteps
+    # episode_mem_ids here is the ids in the traininig collator so like (4,4,4,5) and corresponds with timesteps
     def _fuse_episodic_tokens(self, cog_tokens, per_tokens, episode_mem_ids):
         cog_outputs = []
         per_outputs = []
+
+
+        # self.fail_active_ep_contexts[fail_episode_id] = {
+        #     "cog": fail_active_ep_cog,
+        #     "per": fail_active_ep_per
+        # }
 
         for i, raw_eid in enumerate(episode_mem_ids):
             eid = int(raw_eid)
             cog_token = cog_tokens[i:i+1]
             per_token = per_tokens[i:i+1]
             context = self.active_ep_contexts.get(eid)
+            fail_context = None
+            if context is not None:
+                fail_context = self.fail_active_ep_contexts.get(
+                    context["fail_episode_id"]
+                )
 
             if context and context["cog"] is not None:
-                
+
                 cog_context = self.episodic_cog_attn(
                     cog_token   
                     ,context["cog"].to(cog_token.device,cog_token.dtype)
@@ -1413,6 +1534,13 @@ class MemoryVLA(nn.Module):
                     cog_token,
                     cog_context
                 )
+
+            if fail_context and fail_context["cog"] is not None:
+                cog_token, _ = self.cog_fail_fusion(
+                    cog_token,
+                    fail_context["cog"]
+                )
+
             cog_outputs.append(cog_token)
 
 
@@ -1428,38 +1556,176 @@ class MemoryVLA(nn.Module):
                     per_token,
                     per_context
                 )
+
+            if fail_context and fail_context["per"] is not None:
+                per_token, _ = self.per_fail_fusion(
+                    per_token,
+                    fail_context["per"]
+                )
+
             per_outputs.append(per_token)
+
 
 
 
         return torch.cat(cog_outputs), torch.cat(per_outputs)
 
+    def _record_failed_episode_steps(
+        self,
+        cog_tokens,
+        per_tokens,
+        episode_ids,
+        timesteps,
+        instructions,
+        retrieval_image_embeddings=None,
+        positions=None,
+    ):
+        """Keep exact per-timestep features until RoboFAC locates a failure."""
+        if not self.use_episodic or self.training:
+            return
 
-    def finish_episode(self, success, episode_id = None):
+        for i, raw_episode_id in enumerate(episode_ids):
+            episode_id = int(torch.as_tensor(raw_episode_id).item())
+            recording = self.fail_episode_recordings.get(episode_id)
+            if recording is None:
+                continue
+
+            timestep = torch.as_tensor(timesteps[i]).detach().cpu()
+            image_embedding = None
+            if retrieval_image_embeddings is not None:
+                image_embedding = retrieval_image_embeddings[i].detach().clone()
+            position = None
+            if positions is not None:
+                position = torch.as_tensor(positions[i]).detach().clone()
+            task_tags = (instructions[i],) if instructions is not None else ()
+
+            recording["cog"].append(
+                BankEntry(
+                    timestep=timestep,
+                    feat=cog_tokens[i].detach().clone(),
+                    image_embedding=image_embedding,
+                    task_tags=task_tags,
+                    position=position,
+                )
+            )
+            recording["per"].append(
+                BankEntry(
+                    timestep=timestep,
+                    feat=per_tokens[i].detach().clone(),
+                    image_embedding=image_embedding,
+                    task_tags=task_tags,
+                    position=position,
+                )
+            )
+
+    @staticmethod
+    def _entries_in_timestep_range(entries, start_timestep, end_timestep):
+        selected = []
+        for entry in entries:
+            if entry.timestep is None:
+                continue
+            timestep = int(torch.as_tensor(entry.timestep).item())
+            if start_timestep <= timestep <= end_timestep:
+                selected.append(entry)
+        return selected
+
+    def _diagnose_failed_episode(self, frames, task_instruction=None):
+        return diagnose_failure_with_robofac(
+            frames, max_frames=20, task_instruction=task_instruction
+        )
+
+    def finish_episode(self, success, frames=None, episode_id=None):
         if not self.use_episodic:
             return
 
         if episode_id is None:
             episode_id = self.active_ep_id
+
         context = self.active_ep_contexts.get(episode_id)
         if context is None:
             raise KeyError(f"Cannot finish inactive episode {episode_id}")
-        self.episodic_bank.end_episode(
-            success=success,
-            episode_cog_banks=self.cog_mem_bank.bank.get(episode_id, []),
-            episode_per_banks=self.per_mem_bank.bank.get(episode_id, []),
-            episode_id=context["bank_episode_id"],
-        )
+        success_episode_id = context["bank_episode_id"]
+        fail_episode_id = context["fail_episode_id"]
 
-        finished_id = episode_id
+        try:
+            if success:
+                self.success_episodic_bank.end_episode(
+                    success=True,
+                    episode_cog_banks=self.cog_mem_bank.bank.get(episode_id, []),
+                    episode_per_banks=self.per_mem_bank.bank.get(episode_id, []),
+                    episode_id=success_episode_id,
+                )
+                self.fail_episodic_bank.bank.pop(fail_episode_id, None)
+                return
 
-        self.active_ep_contexts.pop(finished_id, None)
-        self.episode_recordings.pop(finished_id, None)
+            self.success_episodic_bank.bank.pop(success_episode_id, None)
+            if frames is None or len(frames) == 0:
+                self.fail_episodic_bank.bank.pop(fail_episode_id, None)
+                overwatch.warning(
+                    "Failed episode had no policy frames; skipping RoboFAC diagnosis"
+                )
+                return
 
-        self.active_ep_id = None
+            diagnosis = self._diagnose_failed_episode(
+                frames, task_instruction=context.get("instruction")
+            )
+            if not diagnosis["failed"]:
+                self.fail_episodic_bank.bank.pop(fail_episode_id, None)
+                overwatch.warning(
+                    "RoboFAC did not identify an observable failure; failed memory was not stored"
+                )
+                return diagnosis
 
-        if len(self.episodic_bank.bank) > self.episodic_bank.max_steps:
-            self.episodic_bank.kick_memory()
+            context_steps = 2
+            start_timestep = max(
+                0, diagnosis["failure_start_timestep"] - context_steps
+            )
+            end_timestep = min(
+                len(frames) - 1,
+                diagnosis["failure_end_timestep"] + context_steps,
+            )
+            diagnosis["stored_start_timestep"] = start_timestep
+            diagnosis["stored_end_timestep"] = end_timestep
+            recording = self.fail_episode_recordings.get(
+                episode_id, {"cog": [], "per": []}
+            )
+            cog_entries = self._entries_in_timestep_range(
+                recording["cog"], start_timestep, end_timestep
+            )
+            per_entries = self._entries_in_timestep_range(
+                recording["per"], start_timestep, end_timestep
+            )
+            if not cog_entries or not per_entries:
+                self.fail_episodic_bank.bank.pop(fail_episode_id, None)
+                overwatch.warning(
+                    "No timestep-aligned memory entries matched the RoboFAC failure window"
+                )
+                return diagnosis
+
+            self.fail_episodic_bank.end_episode(
+                success=False,
+                episode_cog_banks=cog_entries,
+                episode_per_banks=per_entries,
+                episode_id=fail_episode_id,
+                failure_diagnosis=diagnosis,
+                failure_start_timestep=diagnosis["failure_start_timestep"],
+                failure_end_timestep=diagnosis["failure_end_timestep"],
+            )
+            return diagnosis
+        except Exception:
+            self.fail_episodic_bank.bank.pop(fail_episode_id, None)
+            raise
+        finally:
+            self.active_ep_contexts.pop(episode_id, None)
+            self.episode_recordings.pop(episode_id, None)
+            self.fail_active_ep_contexts.pop(fail_episode_id, None)
+            self.fail_episode_recordings.pop(episode_id, None)
+            self.active_ep_id = None
+
+            if len(self.success_episodic_bank.bank) > self.success_episodic_bank.max_steps:
+                self.success_episodic_bank.kick_memory()
+            if len(self.fail_episodic_bank.bank) > self.fail_episodic_bank.max_steps:
+                self.fail_episodic_bank.kick_memory()
 
 
 
@@ -1630,6 +1896,15 @@ class MemoryVLA(nn.Module):
         )
 
         if self.use_episodic:
+            self._record_failed_episode_steps(
+                cog_tokens=cog_tokens,
+                per_tokens=per_tokens,
+                episode_ids=episode_ids,
+                timesteps=timesteps,
+                instructions=instructions,
+                retrieval_image_embeddings=retrieval_image_embeddings,
+                positions=positions,
+            )
             cog_tokens, per_tokens = self._fuse_episodic_tokens(
                 cog_tokens=cog_tokens,
                 per_tokens=per_tokens,
@@ -2015,12 +2290,13 @@ class MemoryVLA(nn.Module):
             if self.use_spatial:
                 self.spatial_mem_bank.reset()
             if self.use_episodic:
-                self.active_ep_id = self.episodic_bank.episode_id
+                self.active_ep_id = self.success_episodic_bank.episode_id
                 self._begin_episode(
                     images=[image],
                     instruction=instruction,
                     episode_id=self.active_ep_id,
                 )
+
 
         episode_ids = [self.active_ep_id if self.use_episodic else 0]
         timesteps = [torch.tensor(self.cur_timestep, device=self.vlm.device)]
@@ -2050,6 +2326,15 @@ class MemoryVLA(nn.Module):
             positions=positions,
         )
         if self.use_episodic:
+            self._record_failed_episode_steps(
+                cog_tokens=cog_tokens,
+                per_tokens=per_tokens,
+                episode_ids=episode_ids,
+                timesteps=timesteps,
+                instructions=[instruction],
+                retrieval_image_embeddings=retrieval_image_embeddings,
+                positions=positions,
+            )
             cog_tokens, per_tokens = self._fuse_episodic_tokens(
                 cog_tokens=cog_tokens,
                 per_tokens=per_tokens,
@@ -2083,6 +2368,7 @@ class MemoryVLA(nn.Module):
                 camera=camera,
                 point_mask=valid_masks,
             )
+
             if not self.activate_spatial_path:
                 per_tokens = self._fuse_spatial_tokens(
                     per_tokens=per_tokens,

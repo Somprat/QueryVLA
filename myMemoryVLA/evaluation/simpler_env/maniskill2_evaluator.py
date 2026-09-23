@@ -75,26 +75,7 @@ def run_maniskill2_eval_single_episode(
     additional_env_save_tags=None,
     logging_dir="./results",
 ):
-                #     kwargs = dict(
-                #     model=model,
-                #     ckpt_path=args.ckpt_path,
-                #     robot_name=args.robot,
-                #     env_name=args.env_name,
-                #     scene_name=args.scene_name,
-                #     robot_init_x=robot_init_x,
-                #     robot_init_y=robot_init_y,
-                #     robot_init_quat=robot_init_quat,
-                #     control_mode=control_mode,
-                #     additional_env_build_kwargs=args.additional_env_build_kwargs,
-                #     rgb_overlay_path=args.rgb_overlay_path,
-                #     control_freq=args.control_freq,
-                #     sim_freq=args.sim_freq,
-                #     max_episode_steps=args.max_episode_steps,
-                #     enable_raytracing=args.enable_raytracing,
-                #     additional_env_save_tags=args.additional_env_save_tags,
-                #     obs_camera_name=args.obs_camera_name,
-                #     logging_dir=args.logging_dir,
-                # )
+
 
     if additional_env_build_kwargs is None:
         additional_env_build_kwargs = {}
@@ -247,7 +228,7 @@ def run_maniskill2_eval_single_episode(
         )
         images.append(image)
         timestep += 1
-    model.finish_episode(success=bool(done))
+    model.finish_episode(success=bool(done), frames=frames["rgb"])
 
 
     output_dir = os.path.join(logging_dir, "probe_data")
@@ -278,7 +259,6 @@ def run_maniskill2_eval_single_episode(
         )
     np.savez_compressed(output_path, **probe_arrays)
     
-
 
 
 

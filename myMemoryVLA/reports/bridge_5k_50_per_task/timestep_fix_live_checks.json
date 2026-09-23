@@ -1,0 +1,80 @@
+[
+  {
+    "video": "log/bridge_generated/memvla_bridge_full--image_aug/eval_simpler/step-020000-epoch-00-loss=0.0055.pt/bridge_table_1_v1/arm_pd_ee_target_delta_pose_align2_gripper_pd_joint_pos/StackGreenCubeOnYellowCubeBakedTexInScene-v0_experiment_full/rob_0.147_0.028_rot_0.000_-0.000_3.142_rgb_overlay_bridge_real_eval_1/failure_obj_episode_9_moved_correct_obj_False_moved_wrong_obj_True_is_src_obj_grasped_False_consecutive_grasp_False_src_on_target_False.mp4",
+    "result": {
+      "failed": false,
+      "explanation": "The robot arm was unable to grasp the light green long block due to an improper orientation of the end effector. Specifically, the end effector was misaligned with the long block, leading to a failure in securely grasping it. This misalignment indicates that the robot arm did not accurately position itself over the target object, which is crucial for successful manipulation. As a result, the robot could not proceed to lift and stack the block on the green cube, leading to an overall task failure. The position deviation in the X, Y, and Z axes contributed to this failure, as the end effector was not correctly oriented towards the long block. Consequently, the robot's attempt to grasp the block was unsuccessful. This error occurred during the grasping stage, where precise positioning is key.",
+      "failure_type": "Position deviation in the X, Y, and Z axes, leading to an inability to grasp the",
+      "failure_start_timestep": 44,
+      "failure_end_timestep": 120,
+      "confidence": 0.035714,
+      "sampled_timesteps": [
+        0,
+        6,
+        13,
+        19,
+        25,
+        32,
+        38,
+        44,
+        51,
+        57,
+        63,
+        69,
+        76,
+        82,
+        88,
+        95,
+        101,
+        107,
+        114,
+        120
+      ],
+      "raw_response": "{\"failed\": false, \"explanation\": \"The robot arm was unable to grasp the light green long block due to an improper orientation of the end effector. Specifically, the end effector was misaligned with the long block, leading to a failure in securely grasping it. This misalignment indicates that the robot arm did not accurately position itself over the target object, which is crucial for successful manipulation. As a result, the robot could not proceed to lift and stack the block on the green cube, leading to an overall task failure. The position deviation in the X, Y, and Z axes contributed to this failure, as the end effector was not correctly oriented towards the long block. Consequently, the robot's attempt to grasp the block was unsuccessful. This error occurred during the grasping stage, where precise positioning is key.\", \"failure_type\": \"Position deviation in the X, Y, and Z axes, leading to an inability to grasp the\", \"failure_start_timestep\": 44, \"failure_end_timestep\": 120, \"confidence\": 0.035714}",
+      "raw_responses": [
+        "{\"failed\": false, \"explanation\": \"The robot arm was unable to grasp the light green long block due to an improper orientation of the end effector. Specifically, the end effector was misaligned with the long block, leading to a failure in securely grasping it. This misalignment indicates that the robot arm did not accurately position itself over the target object, which is crucial for successful manipulation. As a result, the robot could not proceed to lift and stack the block on the green cube, leading to an overall task failure. The position deviation in the X, Y, and Z axes contributed to this failure, as the end effector was not correctly oriented towards the long block. Consequently, the robot's attempt to grasp the block was unsuccessful. This error occurred during the grasping stage, where precise positioning is key.\", \"failure_type\": \"Position deviation in the X, Y, and Z axes, leading to an inability to grasp the\", \"failure_start_timestep\": 44, \"failure_end_timestep\": 120, \"confidence\": 0.035714}"
+      ],
+      "task_instruction": "stack the green cube on the yellow cube",
+      "diagnosis_version": 2
+    }
+  },
+  {
+    "video": "log/bridge_generated/memvla_bridge_full--image_aug/eval_simpler/step-020000-epoch-00-loss=0.0055.pt/bridge_table_1_v1/arm_pd_ee_target_delta_pose_align2_gripper_pd_joint_pos/StackGreenCubeOnYellowCubeBakedTexInScene-v0_experiment_full/rob_0.147_0.028_rot_0.000_-0.000_3.142_rgb_overlay_bridge_real_eval_1/failure_obj_episode_8_moved_correct_obj_True_moved_wrong_obj_False_is_src_obj_grasped_True_consecutive_grasp_True_src_on_target_False.mp4",
+    "result": {
+      "failed": false,
+      "explanation": "Position deviation during the grasping stage. The robot arm's end-effector was not properly aligned with the light green long block, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was positioned too far forward and slightly off to the left of the target object, preventing it from securely grasping the block. As a result, the robot could not complete the subsequent steps of lifting and stacking the block on the green cube. Such position deviation can significantly affect the robot's ability to perform the intended actions accurately. Therefore, the robot should first re-evaluate its position relative to the long block and adjust its approach accordingly before attempting to grasp it again. This may involve revisiting the initial reaching subtask,",
+      "failure_type": "Position deviation during the grasping stage. The robot arm's end-effector was m",
+      "failure_start_timestep": 13,
+      "failure_end_timestep": 13,
+      "confidence": 0.078777,
+      "sampled_timesteps": [
+        0,
+        6,
+        13,
+        19,
+        25,
+        32,
+        38,
+        44,
+        51,
+        57,
+        63,
+        69,
+        76,
+        82,
+        88,
+        95,
+        101,
+        107,
+        114,
+        120
+      ],
+      "raw_response": "{\"failed\": false, \"explanation\": \"Position deviation during the grasping stage. The robot arm's end-effector was not properly aligned with the light green long block, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was positioned too far forward and slightly off to the left of the target object, preventing it from securely grasping the block. As a result, the robot could not complete the subsequent steps of lifting and stacking the block on the green cube. Such position deviation can significantly affect the robot's ability to perform the intended actions accurately. Therefore, the robot should first re-evaluate its position relative to the long block and adjust its approach accordingly before attempting to grasp it again. This may involve revisiting the initial reaching subtask,\", \"failure_type\": \"Position deviation during the grasping stage. The robot arm's end-effector was m\", \"failure_start_timestep\": 13, \"failure_end_timestep\": 13, \"confidence\": 0.078777}",
+      "raw_responses": [
+        "{\"failed\": false, \"explanation\": \"Position deviation during the grasping stage. The robot arm's end-effector was not properly aligned with the light green long block, leading to an unsuccessful grasp attempt. This misalignment indicates that the end-effector was positioned too far forward and slightly off to the left of the target object, preventing it from securely grasping the block. As a result, the robot could not complete the subsequent steps of lifting and stacking the block on the green cube. Such position deviation can significantly affect the robot's ability to perform the intended actions accurately. Therefore, the robot should first re-evaluate its position relative to the long block and adjust its approach accordingly before attempting to grasp it again. This may involve revisiting the initial reaching subtask,\", \"failure_type\": \"Position deviation during the grasping stage. The robot arm's end-effector was m\", \"failure_start_timestep\": 13, \"failure_end_timestep\": 13, \"confidence\": 0.078777}"
+      ],
+      "task_instruction": "stack the green cube on the yellow cube",
+      "diagnosis_version": 2
+    }
+  }
+]
