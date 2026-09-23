@@ -75,7 +75,7 @@ class TrainConfig:
     retrieval_layers: int = 2 # Number of layers of memory retrieval
     query_retrieval_mode: str = "query" # Keep query retrieval for controlled ablations
     query_retrieval_top_k: int = 4 # Historical cognition records selected per query
-    experiment_mode: str = "full" # baseline, episodic, query, query_episodic, or full
+    experiment_mode: str = "full" # baseline, episodic, query, query_episodic full, or memory_off
     freeze_vlm: bool = True # Recompute VLM features without updating PrismaticVLM
     freeze_action_model: bool = True # Preserve the pretrained action policy for adapter ablations
     activate_spatial_path: bool = False # Condition diffusion directly on spatial-memory tokens
@@ -131,7 +131,7 @@ def train(cfg: TrainConfig) -> None:
     overwatch.info("MemoryVLA Training :: Warming Up")
 
     valid_experiment_modes = {
-        "baseline", "episodic", "query", "query_episodic", "full"
+        "baseline", "episodic", "query", "query_episodic", "full", "memory_off"
     }
     if cfg.experiment_mode not in valid_experiment_modes:
         raise ValueError(

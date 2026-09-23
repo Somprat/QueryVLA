@@ -44,7 +44,7 @@ def parse_local_args(argv):
     )
     parser.add_argument(
         "--experiment-mode",
-        choices=("baseline", "episodic", "query", "query_episodic", "full"),
+        choices=("baseline", "episodic", "query", "query_episodic", "full", "memory_off"),
         default="full",
         help=(
             "Evaluate isolated paper-PCMB, episodic, query, combined, or full modes."

@@ -265,7 +265,7 @@ MODALITY_SCORES_SWEEP = [{
 ]
 
 EXPERIMENT_MODES = frozenset(
-    {"baseline", "episodic", "query", "query_episodic", "full"}
+    {"baseline", "episodic", "query", "query_episodic", "full", "memory_off"}
 )
 
 
@@ -1101,6 +1101,7 @@ class MemoryVLA(nn.Module):
 
         self.cur_timestep = 0
 
+
         self.clip_processor = CLIPProcessor.from_pretrained(
             "openai/clip-vit-base-patch32"
         )
@@ -1128,7 +1129,6 @@ class MemoryVLA(nn.Module):
         pcmb_query_retrieval_mode = (
             self.query_retrieval_mode if self.use_query else "off"
         )
-
 
         self.cog_mem_bank = CogMemBank(
             dataloader_type=self.dataloader_type,
@@ -2302,103 +2302,106 @@ class MemoryVLA(nn.Module):
         timesteps = [torch.tensor(self.cur_timestep, device=self.vlm.device)]
         retrieval_image_embeddings = None
         retrieval_query_embeddings = None
-        if self.use_query or self.use_episodic:
-            retrieval_image_embeddings, retrieval_query_embeddings = (
-                self._encode_retrieval_inputs([image], [instruction])
-            )
 
-        cog_tokens = self.cog_mem_bank.process_batch(
-            tokens=cog_tokens,
-            episode_ids=episode_ids,
-            timesteps=timesteps,
-            instructions=[instruction],
-            retrieval_image_embeddings=retrieval_image_embeddings,
-            retrieval_query_embeddings=retrieval_query_embeddings,
-            positions=positions,
-        )
-        per_tokens = self.per_mem_bank.process_batch(
-            tokens=per_tokens,
-            episode_ids=episode_ids,
-            timesteps=timesteps,
-            instructions=[instruction],
-            retrieval_image_embeddings=retrieval_image_embeddings,
-            retrieval_query_embeddings=retrieval_query_embeddings,
-            positions=positions,
-        )
-        if self.use_episodic:
-            self._record_failed_episode_steps(
-                cog_tokens=cog_tokens,
-                per_tokens=per_tokens,
+        ## start using memory bank
+        if self.experiment_mode != "memory_off":
+            if self.use_query or self.use_episodic:
+                retrieval_image_embeddings, retrieval_query_embeddings = (
+                    self._encode_retrieval_inputs([image], [instruction])
+                )
+
+            cog_tokens = self.cog_mem_bank.process_batch(
+                tokens=cog_tokens,
                 episode_ids=episode_ids,
                 timesteps=timesteps,
                 instructions=[instruction],
                 retrieval_image_embeddings=retrieval_image_embeddings,
+                retrieval_query_embeddings=retrieval_query_embeddings,
                 positions=positions,
             )
-            cog_tokens, per_tokens = self._fuse_episodic_tokens(
-                cog_tokens=cog_tokens,
-                per_tokens=per_tokens,
-                episode_mem_ids=episode_ids,
+            per_tokens = self.per_mem_bank.process_batch(
+                tokens=per_tokens,
+                episode_ids=episode_ids,
+                timesteps=timesteps,
+                instructions=[instruction],
+                retrieval_image_embeddings=retrieval_image_embeddings,
+                retrieval_query_embeddings=retrieval_query_embeddings,
+                positions=positions,
             )
-
-        spatial_tokens_for_diffusion = None
-        spatial_valid_for_diffusion = None
-        if self.use_spatial:
-            if depth is None or intrinsics is None or extrinsics is None:
-                raise ValueError(
-                    "Full experiment mode requires depth, intrinsics, and extrinsics"
-                )
-            depth = self._add_batch_depth(depth)
-            intrinsics = self._add_batch_intrinsics(intrinsics)
-            extrinsics = self._add_batch_extrinsics(extrinsics)
-
-            points_camera, valid_masks = geometry.depth_to_points(
-                depth=depth,
-                intrinsics=intrinsics,
-                mask=None,
-                flatten=True,
-            )
-
-            camera_to_world = torch.linalg.inv(extrinsics.float())
-            points_world = geometry.transform_points(points_camera, camera_to_world)
-
-            spatial_tokens = self.point_cloud_spatial_encoder(
-                points=points_world,
-                proprio=proprio,
-                camera=camera,
-                point_mask=valid_masks,
-            )
-
-            if not self.activate_spatial_path:
-                per_tokens = self._fuse_spatial_tokens(
+            if self.use_episodic:
+                self._record_failed_episode_steps(
+                    cog_tokens=cog_tokens,
                     per_tokens=per_tokens,
-                    spatial_tokens=spatial_tokens,
                     episode_ids=episode_ids,
                     timesteps=timesteps,
                     instructions=[instruction],
                     retrieval_image_embeddings=retrieval_image_embeddings,
-                    retrieval_query_embeddings=retrieval_query_embeddings,
                     positions=positions,
                 )
-            else:
-                spatial_tokens_for_diffusion = self.spatial_mem_bank.process_batch(
-                        tokens=spatial_tokens,
+                cog_tokens, per_tokens = self._fuse_episodic_tokens(
+                    cog_tokens=cog_tokens,
+                    per_tokens=per_tokens,
+                    episode_mem_ids=episode_ids,
+                )
+
+            spatial_tokens_for_diffusion = None
+            spatial_valid_for_diffusion = None
+            if self.use_spatial:
+                if depth is None or intrinsics is None or extrinsics is None:
+                    raise ValueError(
+                        "Full experiment mode requires depth, intrinsics, and extrinsics"
+                    )
+                depth = self._add_batch_depth(depth)
+                intrinsics = self._add_batch_intrinsics(intrinsics)
+                extrinsics = self._add_batch_extrinsics(extrinsics)
+
+                points_camera, valid_masks = geometry.depth_to_points(
+                    depth=depth,
+                    intrinsics=intrinsics,
+                    mask=None,
+                    flatten=True,
+                )
+
+                camera_to_world = torch.linalg.inv(extrinsics.float())
+                points_world = geometry.transform_points(points_camera, camera_to_world)
+
+                spatial_tokens = self.point_cloud_spatial_encoder(
+                    points=points_world,
+                    proprio=proprio,
+                    camera=camera,
+                    point_mask=valid_masks,
+                )
+
+                if not self.activate_spatial_path:
+                    per_tokens = self._fuse_spatial_tokens(
+                        per_tokens=per_tokens,
+                        spatial_tokens=spatial_tokens,
                         episode_ids=episode_ids,
                         timesteps=timesteps,
                         instructions=[instruction],
                         retrieval_image_embeddings=retrieval_image_embeddings,
                         retrieval_query_embeddings=retrieval_query_embeddings,
-                        positions=positions
+                        positions=positions,
                     )
-                spatial_tokens_for_diffusion = spatial_tokens_for_diffusion.to(
-                    device=per_tokens.device,
-                    dtype=per_tokens.dtype,
-                )
-                spatial_valid_for_diffusion = torch.ones(
-                    per_tokens.shape[0],
-                    device=per_tokens.device,
-                    dtype=torch.bool,
-                )
+                else:
+                    spatial_tokens_for_diffusion = self.spatial_mem_bank.process_batch(
+                            tokens=spatial_tokens,
+                            episode_ids=episode_ids,
+                            timesteps=timesteps,
+                            instructions=[instruction],
+                            retrieval_image_embeddings=retrieval_image_embeddings,
+                            retrieval_query_embeddings=retrieval_query_embeddings,
+                            positions=positions
+                        )
+                    spatial_tokens_for_diffusion = spatial_tokens_for_diffusion.to(
+                        device=per_tokens.device,
+                        dtype=per_tokens.dtype,
+                    )
+                    spatial_valid_for_diffusion = torch.ones(
+                        per_tokens.shape[0],
+                        device=per_tokens.device,
+                        dtype=torch.bool,
+                    )
 
 
         self.cur_timestep += 1

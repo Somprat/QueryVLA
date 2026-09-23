@@ -68,7 +68,7 @@ class VLAInference:
         self.policy_setup = policy_setup
         self.unnorm_key = unnorm_key
         valid_experiment_modes = {
-            "baseline", "episodic", "query", "query_episodic", "full"
+            "baseline", "episodic", "query", "query_episodic", "full", "memory_off"
         }
         if experiment_mode not in valid_experiment_modes:
             raise ValueError(
