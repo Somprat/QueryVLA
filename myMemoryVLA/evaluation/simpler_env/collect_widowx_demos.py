@@ -47,6 +47,10 @@ TRAINING_ENV_NAME = "WidowXTrainingPickPlace-v0"
 ROBOT_NAME = "widowx"
 
 
+class ImplausibleTranslationError(ValueError):
+    """Reject a rollout with an excessive reached TCP displacement."""
+
+
 class UnstableLayoutError(RuntimeError):
     """Raised when randomized actors do not settle near sampled poses."""
 
@@ -537,7 +541,7 @@ def _validate_episode(arrays: dict[str, np.ndarray]) -> None:
     invalid_steps = np.flatnonzero(translation_norms > 0.05)
     if invalid_steps.size:
         step = int(invalid_steps[0])
-        raise ValueError(
+        raise ImplausibleTranslationError(
             f"Implausible reached translation at step {step}: "
             f"{arrays['action'][step, :3]} (norm={translation_norms[step]:.6f} m)"
         )
@@ -665,6 +669,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--save-failures", action="store_true")
     parser.add_argument(
+        "--resume", action="store_true",
+        help="Validate and count existing successes in this seed range without overwriting them",
+    )
+    parser.add_argument(
         "--task",
         choices=("all", *TRAINING_TASKS),
         default="all",
@@ -687,12 +695,40 @@ def main() -> None:
         successes = 0
 
         for attempt in range(args.max_attempts):
+            seed = args.seed + attempt
+            existing = args.output_dir / task_name / "success" / f"seed_{seed:08d}.npz"
+            if args.resume and existing.exists():
+                with np.load(existing, allow_pickle=False) as episode:
+                    metadata = json.loads(str(episode["metadata_json"].item()))
+                    if (
+                        not bool(episode["success"].item())
+                        or metadata["task"] != task_name
+                        or metadata["seed"] != seed
+                    ):
+                        raise ValueError(f"Invalid resume episode: {existing}")
+                    _validate_episode({
+                        key: episode[key] for key in (
+                            "rgb", "depth", "camera_intrinsics", "camera_extrinsics",
+                            "proprio", "action", "commanded_action", "gripper_open_state",
+                        )
+                    })
+                successes += 1
+                print(f"task={task_name} seed={seed} resumed_success=True path={existing}")
+                if successes >= args.num_successes:
+                    break
+                continue
             try:
                 success, path = collect_attempt(
                     task_name=task_name,
-                    seed=args.seed + attempt,
+                    seed=seed,
                     output_root=args.output_dir,
                     save_failures=args.save_failures,
+                )
+            except ImplausibleTranslationError as exc:
+                success, path = False, None
+                print(
+                    f"task={task_name} seed={seed} attempt={attempt + 1}/"
+                    f"{args.max_attempts} rejected_episode={exc}"
                 )
             except UnstableLayoutError as exc:
                 success, path = False, None

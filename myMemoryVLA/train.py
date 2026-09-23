@@ -174,24 +174,29 @@ def train(cfg: TrainConfig) -> None:
     #   =>> Note :: Verifies that all parameters are loaded in FP32 on load!
     overwatch.info(f"Loading Base VLM `{cfg.vla.base_vlm}` from ID/Path")
     if cfg.pretrained_checkpoint is not None:
-        # [Validate] Pretrained Checkpoint `step` and `epoch` should match `resume_step` and `resume_epoch`
-        #   =>> Note :: We make developers pass in `resume_*` arguments as an extra sanity check!
         if cfg.is_resume:
-            step_match = re.search(r"step-(\d+)-", cfg.pretrained_checkpoint)
-            epoch_match = re.search(r"epoch-(\d+)-", cfg.pretrained_checkpoint)
-
-            if step_match and epoch_match:
-                step = int(step_match.group(1))  # remove leading zeros
-                epoch = int(epoch_match.group(1))  # remove leading zeros
-                assert step == cfg.resume_step, f"Mismatch in step: {step} != {cfg.resume_step}"
-                assert epoch == cfg.resume_epoch, f"Mismatch in epoch: {epoch} != {cfg.resume_epoch}"
-            else:
-                raise ValueError(f"Checkpoint filename format incorrect: {cfg.pretrained_checkpoint}")
+            optimizer_path = Path(cfg.pretrained_checkpoint).with_suffix(".optimizer")
+            if not optimizer_path.is_file():
+                raise FileNotFoundError(
+                    f"Missing {optimizer_path}. This checkpoint has no optimizer state; "
+                    "use is_resume=False for weights-only initialization."
+                )
+            # mmap reads counters without materializing the Adam tensors a second time.
+            resume_state = torch.load(str(optimizer_path), map_location="cpu", mmap=True)
+            for field, key in (("resume_step", "global_step"), ("resume_epoch", "epoch")):
+                value = resume_state[key]
+                requested = getattr(cfg, field)
+                if requested is not None and requested != value:
+                    raise ValueError(f"{field}={requested} does not match checkpoint value {value}")
+                setattr(cfg, field, value)
+            del resume_state
+            if cfg.max_steps is not None and cfg.resume_step >= cfg.max_steps:
+                raise ValueError("Checkpoint already reached MAX_STEPS; increase the target to continue.")
 
         overwatch.info("Loading VLA Checkpoint")
         if cfg.use_ema:
             overwatch.info("Loading EMA of Diffusion")
-        kwargs = vars(cfg)
+        kwargs = vars(cfg).copy()
         model_id_or_path = kwargs.pop("pretrained_checkpoint")
         vla = load_vla(model_id_or_path=model_id_or_path, load_for_training=True, **kwargs)
 

@@ -26,7 +26,6 @@ from .retrieval import (
     RetrievalWeights,
     semantic_score,
     spatial_score,
-    task_score,
     temporal_score,
 )
 
@@ -48,7 +47,6 @@ __all__ = [
     "parse_intrinsics",
     "semantic_score",
     "spatial_score",
-    "task_score",
     "temporal_score",
     "transform_points",
     "voxelize_points",

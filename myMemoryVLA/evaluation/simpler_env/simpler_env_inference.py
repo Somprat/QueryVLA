@@ -50,6 +50,12 @@ def parse_local_args(argv):
             "Evaluate isolated paper-PCMB, episodic, query, combined, or full modes."
         ),
     )
+    parser.add_argument(
+        "--query-retrieval-mode",
+        choices=("off", "query", "shuffled", "cosine", "by_modal"),
+        default=None,
+        help="Override checkpoint retrieval strategy independently of experiment mode.",
+    )
     parser.add_argument("--query-retrieval-top-k", type=int, default=None)
     parser.add_argument("--episodic-max-steps", type=int, default=None)
     parser.add_argument("--episodic-top-k", type=int, default=None)
@@ -80,6 +86,8 @@ if __name__ == "__main__":
     if local_args.unnorm_key is not None:
         cli_args["unnorm_key"] = local_args.unnorm_key
     cli_args["experiment_mode"] = local_args.experiment_mode
+    if local_args.query_retrieval_mode is not None:
+        cli_args["query_retrieval_mode"] = local_args.query_retrieval_mode
     if local_args.query_retrieval_top_k is not None:
         cli_args["query_retrieval_top_k"] = local_args.query_retrieval_top_k
     if local_args.episodic_max_steps is not None:
@@ -101,6 +109,10 @@ if __name__ == "__main__":
 
     args.logging_dir = os.path.join(os.path.dirname(os.path.dirname(args.ckpt_path)), 'eval_simpler')
     mode_tag = f"experiment_{args.experiment_mode}"
+    mode_tag += (
+        f"_retrieval_{getattr(args, 'query_retrieval_mode', 'query')}"
+        f"_k{getattr(args, 'query_retrieval_top_k', 4)}"
+    )
     if args.additional_env_save_tags:
         args.additional_env_save_tags = f"{args.additional_env_save_tags}_{mode_tag}"
     else:

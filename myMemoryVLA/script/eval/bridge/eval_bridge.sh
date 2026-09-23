@@ -22,6 +22,7 @@ if [[ -n "${unnorm_key}" ]]; then
     unnorm_args+=(--unnorm-key "${unnorm_key}")
 fi
 experiment_mode="${EXPERIMENT_MODE:-full}"
+retrieval_mode="${QUERY_RETRIEVAL_MODE:-}"
 episode_start="${EPISODE_START:-0}"
 episode_end="${EPISODE_END:-24}"
 memory_args=(
@@ -29,6 +30,14 @@ memory_args=(
     --episodic-max-steps "${EPISODIC_MAX_STEPS:-10}"
     --episodic-top-k "${EPISODIC_TOP_K:-2}"
 )
+
+if [[ -n "${retrieval_mode}" ]]; then
+    case "${retrieval_mode}" in
+        off|query|shuffled|cosine|by_modal) ;;
+        *) echo "Invalid QUERY_RETRIEVAL_MODE: ${retrieval_mode}" >&2; exit 1 ;;
+    esac
+    memory_args+=(--query-retrieval-mode "${retrieval_mode}")
+fi
 
 if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" && "${experiment_mode}" != "query" && "${experiment_mode}" != "query_episodic" && "${experiment_mode}" != "full" ]]; then
     echo "EXPERIMENT_MODE must be baseline, episodic, query, query_episodic, or full, got: ${experiment_mode}" >&2
@@ -38,6 +47,7 @@ fi
 echo "Bridge evaluation: mode=${experiment_mode}, unnorm_key=${unnorm_key:-policy default}, episodes=${episode_start}-${episode_end}"
 for ckpt_path in "${ckpt_paths[@]}"; do
     eval_dir=$(dirname $(dirname ${ckpt_path}))/eval_simpler/$(basename ${ckpt_path})/${experiment_mode}
+    eval_dir="${eval_dir}/retrieval_${retrieval_mode:-config}_k${QUERY_RETRIEVAL_TOP_K:-4}"
     mkdir -p ${eval_dir}
 
     scene_name=bridge_table_1_v1

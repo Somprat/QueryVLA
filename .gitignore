@@ -21,3 +21,27 @@ myMemoryVLA/logs/
 # Hugging Face and Python caches
 .cache/
 **/pip-cache/
+
+# Local editor and agent working files
+/.codex_work/
+/.vscode/
+**/node_modules/
+.DS_Store
+
+# Local environment secrets (keep shareable templates)
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Training artifacts, including resumable checkpoint pairs and partial writes
+*.pt
+*.pth
+*.safetensors
+*.optimizer
+*.pt.tmp
+*.optimizer.tmp
+**/wandb/
+
+# Generated workbook inspection output
+outputs/**/*.inspect.ndjson

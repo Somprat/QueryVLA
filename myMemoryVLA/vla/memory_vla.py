@@ -287,9 +287,9 @@ class CogMemBank(nn.Module):
         assert dataloader_type in ('stream', 'group')
         assert fusion_type in ('gate', 'add')
         assert consolidate_type in ('fifo', 'tome')
-        if query_retrieval_mode not in ("off", "query", "shuffled", "by_modal"):
+        if query_retrieval_mode not in ("off", "query", "shuffled", "cosine", "by_modal"):
             raise ValueError(
-                "query_retrieval_mode must be one of: off, query, shuffled, by_modal"
+                "query_retrieval_mode must be one of: off, query, shuffled, cosine, by_modal"
             )
         if query_retrieval_top_k < 1:
             raise ValueError("query_retrieval_top_k must be at least 1")
@@ -497,7 +497,7 @@ class CogMemBank(nn.Module):
             
             hist = self.bank.get(eid, [])
             if len(hist) > 0:
-                if self.query_retrieval_mode == "query":
+                if self.query_retrieval_mode in {"query", "shuffled", "cosine"}:
                     hist = self._select_history(
                         hist=hist,
                         working_mem=working_mem,
@@ -601,6 +601,26 @@ class CogMemBank(nn.Module):
         if self.query_retrieval_mode == "shuffled":
             indices = torch.randperm(len(hist))[:self.query_retrieval_top_k].tolist()
             return [hist[index] for index in indices]
+
+        if self.query_retrieval_mode == "cosine":
+            # Rank by raw cosine alone, without task, position, or recency weights.
+            # Fall back to bank features when shared retrieval embeddings are missing.
+            use_image_embeddings = query_embedding is not None and all(
+                memory.image_embedding is not None for memory in hist
+            )
+            query_vector = (
+                query_embedding if use_image_embeddings
+                else working_mem.detach().mean(dim=(0, 1))
+            ).detach().float().flatten()
+            memory_vectors = torch.stack([
+                (memory.image_embedding if use_image_embeddings
+                 else memory.feat.detach().mean(dim=0))
+                .detach().to(device=query_vector.device, dtype=torch.float32).flatten()
+                for memory in hist
+            ])
+            scores = F.cosine_similarity(memory_vectors, query_vector.unsqueeze(0), dim=1)
+            indices = torch.argsort(scores, descending=True, stable=True)
+            return [hist[index] for index in indices[:self.query_retrieval_top_k].tolist()]
 # need the query position here and task type
 
         query = retrieval.RetrievalQuery(

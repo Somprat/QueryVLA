@@ -10,7 +10,6 @@ from collections import OrderedDict
 from functools import partial
 from pathlib import Path
 from typing import Callable, Optional, Union
-from concurrent.futures import ThreadPoolExecutor
 
 import torch
 import torch.distributed as dist
@@ -97,7 +96,6 @@ class FSDPStrategy(TrainingStrategy):
         self.fsdp_save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
         self.fsdp_save_optimizer_policy = FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=True)
 
-        self._save_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ckpt-saver")
 
     def save_checkpoint(
         self,
@@ -113,6 +111,7 @@ class FSDPStrategy(TrainingStrategy):
         # Summon Full State Dictionary =>> Reconstitute from Shards
         with FSDP.state_dict_type(self.vlm, self.fsdp_state_dict_type, self.fsdp_save_policy, self.fsdp_save_optimizer_policy):
             full_vlm_state_dict = self.vlm.state_dict()
+            optimizer_state = FSDP.optim_state_dict(self.vlm, self.optimizer)
             model_state_dicts = {
                 mkey: OrderedDict() for mkey in (self.trainable_module_keys if only_trainable else self.all_module_keys)
             }
@@ -126,6 +125,7 @@ class FSDPStrategy(TrainingStrategy):
             # Save on rank zero *only*
             if overwatch.is_rank_zero():
                 checkpoint_dir = run_dir / "checkpoints"
+                checkpoint_dir.mkdir(parents=True, exist_ok=True)
                 if train_loss is None:
                     checkpoint_path = checkpoint_dir / f"step-{global_step:06d}-epoch-{epoch:02d}-loss=inf.pt"
                 else:
@@ -138,10 +138,21 @@ class FSDPStrategy(TrainingStrategy):
                         value = model_state_dicts.pop(key)
                         model_state_dicts[key[4:]] = value
 
-                # Save Checkpoint & Copy Latest to `latest-checkpoint.pt`
-                # torch.save({"model": model_state_dicts}, checkpoint_path)
-                self._save_executor.submit(torch.save, {"model": model_state_dicts}, checkpoint_path)
-                overwatch.info(f"Saved checkpoint to {checkpoint_path}")
+                # Publish the model last: its presence marks a completed checkpoint pair.
+                # Synchronous writes avoid mutable optimizer snapshots and hidden I/O failures.
+                optimizer_path = self._get_optimizer_path(checkpoint_path)
+                optimizer_tmp = optimizer_path.with_suffix(".optimizer.tmp")
+                model_tmp = checkpoint_path.with_suffix(".pt.tmp")
+                torch.save({
+                    "optimizer": optimizer_state,
+                    "scheduler": self.lr_scheduler.state_dict(),
+                    "global_step": global_step,
+                    "epoch": epoch,
+                }, optimizer_tmp)
+                torch.save({"model": model_state_dicts}, model_tmp)
+                optimizer_tmp.replace(optimizer_path)
+                model_tmp.replace(checkpoint_path)
+                overwatch.info(f"Saved resumable checkpoint to {checkpoint_path}")
 
             dist.barrier()
 
@@ -155,14 +166,16 @@ class FSDPStrategy(TrainingStrategy):
         checkpoint_path = Path(checkpoint_path)
         optimizer_path = self._get_optimizer_path(checkpoint_path)
         if not optimizer_path.exists():
-            overwatch.warning(f"Optimizer checkpoint not found at {optimizer_path}!")
-            return
+            raise FileNotFoundError(f"Optimizer checkpoint not found at {optimizer_path}; use is_resume=False for weights-only initialization.")
         # Load Checkpoint =>> Note that FSDP will automatically handle device placement!
-        optim_state_dict = torch.load(optimizer_path, map_location="cpu")
+        checkpoint = torch.load(optimizer_path, map_location="cpu")
+        if "scheduler" not in checkpoint:
+            raise ValueError(f"Scheduler state missing from {optimizer_path}; cannot fully resume.")
         with FSDP.state_dict_type(self.vlm, self.fsdp_state_dict_type, FullStateDictConfig(offload_to_cpu=True, rank0_only=False), FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=False)):
-            optim_state_dict = FSDP.optim_state_dict_to_load(self.vlm, self.optimizer, optim_state_dict["optimizer"])
+            optim_state_dict = FSDP.optim_state_dict_to_load(self.vlm, self.optimizer, checkpoint["optimizer"])
             self.optimizer.load_state_dict(optim_state_dict)
-        overwatch.info(f"Loaded optimizer state dict from {optimizer_path}")
+        self.lr_scheduler.load_state_dict(checkpoint["scheduler"])
+        overwatch.info(f"Loaded optimizer and scheduler state from {optimizer_path}")
 
     def run_setup(self, run_dir: Path, n_train_examples: int) -> None:
         # Iteratively Assemble FSDP Wrapping Policy by fetching the wrapping policies for each backbone/constituent
