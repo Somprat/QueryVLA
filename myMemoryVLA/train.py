@@ -75,7 +75,7 @@ class TrainConfig:
     retrieval_layers: int = 2 # Number of layers of memory retrieval
     query_retrieval_mode: str = "query" # Keep query retrieval for controlled ablations
     query_retrieval_top_k: int = 4 # Historical cognition records selected per query
-    experiment_mode: str = "full" # baseline, episodic, query, query_episodic full, or memory_off
+    experiment_mode: str = "full" # baseline, episodic, query, query_episodic, full, memory_off, or spatial
     freeze_vlm: bool = True # Recompute VLM features without updating PrismaticVLM
     freeze_action_model: bool = True # Preserve the pretrained action policy for adapter ablations
     activate_spatial_path: bool = False # Condition diffusion directly on spatial-memory tokens
@@ -131,7 +131,7 @@ def train(cfg: TrainConfig) -> None:
     overwatch.info("MemoryVLA Training :: Warming Up")
 
     valid_experiment_modes = {
-        "baseline", "episodic", "query", "query_episodic", "full", "memory_off"
+        "baseline", "episodic", "query", "query_episodic", "full", "memory_off", "spatial"
     }
     if cfg.experiment_mode not in valid_experiment_modes:
         raise ValueError(
@@ -140,8 +140,11 @@ def train(cfg: TrainConfig) -> None:
         )
 
     # RGB-only modes must not ask the RLDS pipeline for calibrated spatial data.
-    # Keep the user switches as opt-outs for full mode.
-    use_spatial = cfg.experiment_mode == "full"
+    # Spatial mode always uses direct action conditioning and no query retrieval.
+    use_spatial = cfg.experiment_mode in {"full", "spatial"}
+    if cfg.experiment_mode == "spatial":
+        cfg.activate_spatial_path = True
+        cfg.query_retrieval_mode = "off"
     cfg.load_depth = use_spatial and cfg.load_depth
     cfg.use_spatial_features = use_spatial and cfg.use_spatial_features
 

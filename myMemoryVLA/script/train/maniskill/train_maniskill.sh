@@ -20,6 +20,7 @@ experiment_mode="${EXPERIMENT_MODE:-full}"
 freeze_vlm="${FREEZE_VLM:-true}"
 freeze_action_model="${FREEZE_ACTION_MODEL:-true}"
 activate_spatial_path="${ACTIVATE_SPATIAL_PATH:-false}"
+query_retrieval_mode="${QUERY_RETRIEVAL_MODE:-query}"
 if [[ "${freeze_vlm}" == "true" && "${freeze_action_model}" == "true" ]]; then
     scope_tag="frozen_vlm_action"
 elif [[ "${freeze_vlm}" == "true" ]]; then
@@ -37,8 +38,8 @@ shuffle_buffer_size="${SHUFFLE_BUFFER_SIZE:-4096}"
 cuda_devices="${CUDA_VISIBLE_DEVICES:-0}"
 dry_run="${DRY_RUN:-false}"
 
-if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" && "${experiment_mode}" != "query" && "${experiment_mode}" != "query_episodic" && "${experiment_mode}" != "full" ]]; then
-    echo "EXPERIMENT_MODE must be baseline, episodic, query, query_episodic, or full, got: ${experiment_mode}" >&2
+if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" && "${experiment_mode}" != "query" && "${experiment_mode}" != "query_episodic" && "${experiment_mode}" != "full" && "${experiment_mode}" != "spatial" ]]; then
+    echo "EXPERIMENT_MODE must be baseline, episodic, query, query_episodic, full, or spatial, got: ${experiment_mode}" >&2
     exit 1
 fi
 
@@ -48,6 +49,14 @@ for boolean_value in "${freeze_vlm}" "${freeze_action_model}" "${activate_spatia
         exit 1
     fi
 done
+case "${query_retrieval_mode}" in
+    off|query|shuffled|cosine|by_modal) ;;
+    *) echo "Invalid QUERY_RETRIEVAL_MODE: ${query_retrieval_mode}" >&2; exit 1 ;;
+esac
+if [[ "${experiment_mode}" == "spatial" ]]; then
+    activate_spatial_path=true
+    query_retrieval_mode=off
+fi
 if [[ "${dry_run}" != "true" && "${freeze_vlm}" == "true" && "${freeze_action_model}" == "true" && ( "${experiment_mode}" == "baseline" || "${experiment_mode}" == "query" ) ]]; then
     echo "${experiment_mode} is an evaluation-only ablation with the pretrained path frozen; no training is needed." >&2
     exit 2
@@ -98,7 +107,7 @@ train_command=(
     --wandb_project "${WANDB_PROJECT:-memvla}"
     --wandb_entity "${WANDB_ENTITY:-}"
     --hf_token "${HF_TOKEN_PATH:-.hf_token}"
-    --query_retrieval_mode query
+    --query_retrieval_mode "${query_retrieval_mode}"
     --query_retrieval_top_k "${QUERY_RETRIEVAL_TOP_K:-4}"
     --episodic_max_steps "${EPISODIC_MAX_STEPS:-10}"
     --episodic_top_k "${EPISODIC_TOP_K:-2}"

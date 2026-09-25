@@ -81,7 +81,7 @@ def run_maniskill2_eval_single_episode(
         additional_env_build_kwargs = {}
 
     # Create environment
-    use_spatial = getattr(model, "experiment_mode", "full") == "full"
+    use_spatial = getattr(model, "experiment_mode", "full") in {"full", "spatial"}
     kwargs = dict(
         obs_mode="rgbd" if use_spatial else "image",
         robot=robot_name,

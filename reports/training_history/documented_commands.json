@@ -1,0 +1,32 @@
+[
+  {
+    "date": "2026-07-10T10:31:51+07:00",
+    "commit": "769fa0a",
+    "source": "myMemoryVLA/README.md",
+    "command": "# Train on the Bridge dataset\n   bash script/train/bridge/train_bridge.sh\n   # Train on the LIBERO-Spatial dataset\n   bash script/train/libero/train_libero_spatial.sh\n   # Train on the LIBERO-Object dataset\n   bash script/train/libero/train_libero_object.sh\n   # Train on the LIBERO-Goal dataset\n   bash script/train/libero/train_libero_goal.sh\n   # Train on the LIBERO-100 dataset\n   bash script/train/libero/train_libero_100.sh\n   # Train on the Fractal dataset\n   bash script/train/fractal/train_fractal.sh\n   # Train on real-world data\n   bash script/train/real_world/train_real.sh"
+  },
+  {
+    "date": "2026-08-20T16:05:36Z",
+    "commit": "f4291a3",
+    "source": "TRAINING_PROGRESS.md",
+    "command": "WANDB_MODE=disabled \\\nDATA_ROOT_DIR=/workspace/datasets \\\nPRETRAINED_CKPT=/workspace/multimodal/models/model_b/checkpoints/memvla-bridge.pt \\\nEXPERIMENT_MODE=full \\\nMAX_STEPS=1 \\\nSAVE_INTERVAL=9999 \\\nBATCH_SIZE=1 \\\nN_GPU=1 \\\nRUN_ID=maniskill_one_step_smoke \\\nbash myMemoryVLA/script/train/maniskill/train_maniskill.sh"
+  },
+  {
+    "date": "2026-09-08T21:10:34+07:00",
+    "commit": "662e38c",
+    "source": "README.md",
+    "command": "source script/setup/env.sh\n\nDATA_ROOT_DIR=/absolute/path/to/datasets \\\nPRETRAINED_CKPT=../models/model_b/checkpoints/memvla-bridge.pt \\\nEXPERIMENT_MODE=full \\\nMAX_STEPS=10000 \\\nSAVE_INTERVAL=2500 \\\n  bash script/train/maniskill/train_maniskill.sh"
+  },
+  {
+    "date": "2026-09-08T21:10:34+07:00",
+    "commit": "662e38c",
+    "source": "README.md",
+    "command": "DRY_RUN=true EXPERIMENT_MODE=full \\\n  bash script/train/maniskill/train_maniskill.sh"
+  },
+  {
+    "date": "2026-09-23T04:34:29Z",
+    "commit": "61e2afc",
+    "source": "myMemoryVLA/script/train/bridge/CHECKPOINTS.md",
+    "command": "DATA_ROOT_DIR=datasets/widowx_simpler_rlds_v2 \\\nEXPERIMENT_MODE=full \\\nACTIVATE_SPATIAL_PATH=true \\\nFREEZE_ACTION_MODEL=true \\\nRESUME_CHECKPOINT=/absolute/path/to/step-005000-epoch-00-loss=0.XXXX.pt \\\nMAX_STEPS=20000 \\\nbash script/train/bridge/train_mixture.sh"
+  }
+]

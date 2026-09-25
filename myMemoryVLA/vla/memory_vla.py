@@ -265,7 +265,7 @@ MODALITY_SCORES_SWEEP = [{
 ]
 
 EXPERIMENT_MODES = frozenset(
-    {"baseline", "episodic", "query", "query_episodic", "full", "memory_off"}
+    {"baseline", "episodic", "query", "query_episodic", "full", "memory_off", "spatial"}
 )
 
 
@@ -1048,19 +1048,23 @@ class MemoryVLA(nn.Module):
         self.experiment_mode = experiment_mode
         self.use_query = experiment_mode in {"query", "query_episodic", "full"}
         self.use_episodic = experiment_mode in {"episodic", "query_episodic", "full"}
-        self.use_spatial = experiment_mode == "full"
+        self.use_spatial = experiment_mode == "full" or experiment_mode == "spatial"
         self.freeze_vlm = freeze_vlm
         self.freeze_action_model = freeze_action_model
         self.failure_fusion_only = failure_fusion_only
         self.future_action_window_size = future_action_window_size
         self.use_ema = use_ema
         self.norm_stats = norm_stats
-        self.activate_spatial_path = activate_spatial_path
+        # Spatial mode is defined as the direct spatial-memory-to-action
+        # ablation, so it must not depend on a second environment variable.
+        self.activate_spatial_path = (
+            activate_spatial_path or experiment_mode == "spatial"
+        )
         self.num_spatial_tokens = num_spatial_tokens
 
         if self.activate_spatial_path and not self.use_spatial:
             raise ValueError(
-                "activate_spatial_path requires experiment_mode='full'"
+                "activate_spatial_path requires experiment_mode='full' or 'spatial'"
             )
 
         self.cog_token_size = token_size
@@ -1074,7 +1078,11 @@ class MemoryVLA(nn.Module):
         self.fusion_type = fusion_type
         self.consolidate_type = consolidate_type
         self.update_fused = update_fused
-        self.query_retrieval_mode = query_retrieval_mode
+        # Spatial mode keeps the complete within-episode memory and disables
+        # instruction-conditioned query retrieval, including for spatial tokens.
+        self.query_retrieval_mode = (
+            "off" if experiment_mode == "spatial" else query_retrieval_mode
+        )
         self.query_retrieval_top_k = query_retrieval_top_k
 
 
@@ -2145,7 +2153,21 @@ class MemoryVLA(nn.Module):
 
         # Load ActionModel from Checkpoint
         if "action_model" in model_state_dict:
-            memory_vla.action_model.load_state_dict(model_state_dict["action_model"], strict=False)
+            action_load_result = memory_vla.action_model.load_state_dict(
+                model_state_dict["action_model"], strict=False
+            )
+            if memory_vla.activate_spatial_path:
+                missing_action_spatial_keys = sorted(
+                    key
+                    for key in action_load_result.missing_keys
+                    if "spatial" in key
+                )
+                if missing_action_spatial_keys:
+                    overwatch.warning(
+                        "Checkpoint has no trained direct spatial-action weights: "
+                        + ", ".join(missing_action_spatial_keys)
+                        + ". Train the spatial mode before treating it as a spatial-conditioned policy."
+                    )
             assert use_ema is False, "Does not support using EMA weights from pretrained checkpoint."
             if "ema_diffusion" in model_state_dict and use_ema:
                 memory_vla.ema_diffusion.load_state_dict(model_state_dict["ema_diffusion"])
@@ -2156,10 +2178,11 @@ class MemoryVLA(nn.Module):
 
         spatial_checkpoint_keys = {
             "point_cloud_spatial_encoder", "spatial_mem_bank",
-            "spatial_to_per_fusion", "per_spatial_gate",
         }
+        if not memory_vla.activate_spatial_path:
+            spatial_checkpoint_keys.update({"spatial_to_per_fusion", "per_spatial_gate"})
         missing_spatial_keys = sorted(spatial_checkpoint_keys - model_state_dict.keys())
-        if missing_spatial_keys and memory_vla.experiment_mode == "full":
+        if missing_spatial_keys and memory_vla.use_spatial:
             overwatch.warning(
                 "Checkpoint has no trained weights for spatial modules: "
                 + ", ".join(missing_spatial_keys)
@@ -2349,7 +2372,7 @@ class MemoryVLA(nn.Module):
             if self.use_spatial:
                 if depth is None or intrinsics is None or extrinsics is None:
                     raise ValueError(
-                        "Full experiment mode requires depth, intrinsics, and extrinsics"
+                        "Spatial experiment modes require depth, intrinsics, and extrinsics"
                     )
                 depth = self._add_batch_depth(depth)
                 intrinsics = self._add_batch_intrinsics(intrinsics)

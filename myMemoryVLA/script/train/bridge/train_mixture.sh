@@ -15,15 +15,21 @@ hf_token="${HF_TOKEN:-YOUR_HF_TOKEN}"
 
 data_root_dir="${DATA_ROOT_DIR:-./data/bridge-rlds}"
 experiment_mode="${EXPERIMENT_MODE:-full}"
+query_retrieval_mode="${QUERY_RETRIEVAL_MODE:-query}"
 
-if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" && "${experiment_mode}" != "query" && "${experiment_mode}" != "query_episodic" && "${experiment_mode}" != "full" ]]; then
-  echo "EXPERIMENT_MODE must be baseline, episodic, query, query_episodic, or full, got: ${experiment_mode}" >&2
+case "${query_retrieval_mode}" in
+  off|query|shuffled|cosine|by_modal) ;;
+  *) echo "Invalid QUERY_RETRIEVAL_MODE: ${query_retrieval_mode}" >&2; exit 1 ;;
+esac
+
+if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" && "${experiment_mode}" != "query" && "${experiment_mode}" != "query_episodic" && "${experiment_mode}" != "full" && "${experiment_mode}" != "spatial" ]]; then
+  echo "EXPERIMENT_MODE must be baseline, episodic, query, query_episodic, full, or spatial, got: ${experiment_mode}" >&2
   exit 1
 fi
 
 if [[ -n "${DATA_MIX:-}" ]]; then
   data_mix="${DATA_MIX}"
-elif [[ "${experiment_mode}" == "full" ]]; then
+elif [[ "${experiment_mode}" == "full" || "${experiment_mode}" == "spatial" ]]; then
   data_mix='bridge_widowx_simpler_rgbd'
 else
   data_mix='bridge'
@@ -72,6 +78,10 @@ if [[ "${activate_spatial_path}" != "true" && "${activate_spatial_path}" != "fal
   echo "ACTIVATE_SPATIAL_PATH must be true or false, got: ${activate_spatial_path}" >&2
   exit 1
 fi
+if [[ "${experiment_mode}" == "spatial" ]]; then
+  activate_spatial_path=true
+  query_retrieval_mode=off
+fi
 if [[ "${freeze_action_model}" == "true" && ( "${experiment_mode}" == "baseline" || "${experiment_mode}" == "query" ) ]]; then
   echo "${experiment_mode} is an evaluation-only ablation with the pretrained path frozen; no training is needed." >&2
   echo "Use script/eval/bridge/eval_bridge.sh with EXPERIMENT_MODE=${experiment_mode}." >&2
@@ -111,7 +121,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
   --hf_token ${hf_token} \
   --vla.shuffle_buffer_size ${shuffle_buffer_size} \
   --experiment_mode "${experiment_mode}" \
-  --query_retrieval_mode query \
+  --query_retrieval_mode "${query_retrieval_mode}" \
   --query_retrieval_top_k "${QUERY_RETRIEVAL_TOP_K:-4}" \
   --episodic_max_steps "${EPISODIC_MAX_STEPS:-10}" \
   --episodic_top_k "${EPISODIC_TOP_K:-2}" \

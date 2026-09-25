@@ -39,8 +39,8 @@ if [[ -n "${retrieval_mode}" ]]; then
     memory_args+=(--query-retrieval-mode "${retrieval_mode}")
 fi
 
-if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" && "${experiment_mode}" != "query" && "${experiment_mode}" != "query_episodic" && "${experiment_mode}" != "full" && "${experiment_mode}" != "memory_off" ]]; then
-    echo "EXPERIMENT_MODE must be baseline, episodic, query, query_episodic, or full, got: ${experiment_mode}" >&2
+if [[ "${experiment_mode}" != "baseline" && "${experiment_mode}" != "episodic" && "${experiment_mode}" != "query" && "${experiment_mode}" != "query_episodic" && "${experiment_mode}" != "full" && "${experiment_mode}" != "memory_off" && "${experiment_mode}" != "spatial" ]]; then
+    echo "EXPERIMENT_MODE must be baseline, episodic, query, query_episodic, full, memory_off or spatial, got: ${experiment_mode}" >&2
     exit 1
 fi
 

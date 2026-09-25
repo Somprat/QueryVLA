@@ -68,7 +68,7 @@ class VLAInference:
         self.policy_setup = policy_setup
         self.unnorm_key = unnorm_key
         valid_experiment_modes = {
-            "baseline", "episodic", "query", "query_episodic", "full", "memory_off"
+            "baseline", "episodic", "query", "query_episodic", "full", "memory_off", "spatial"
         }
         if experiment_mode not in valid_experiment_modes:
             raise ValueError(
@@ -76,7 +76,7 @@ class VLAInference:
                 f"{experiment_mode!r}; expected one of {sorted(valid_experiment_modes)}."
             )
         self.experiment_mode = experiment_mode
-        self.use_spatial = experiment_mode == "full"
+        self.use_spatial = experiment_mode == "full" or experiment_mode == "spatial"
 
         print(
             f"*** policy_setup: {policy_setup}, unnorm_key: {unnorm_key}, "

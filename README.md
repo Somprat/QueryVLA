@@ -134,6 +134,7 @@ The launcher evaluates cube, carrot, spoon, and eggplant manipulation with 24 ob
 | `episodic` | No | Yes | No |
 | `query_episodic` | Yes | Yes | No |
 | `full` | Yes | Yes | Yes |
+| `spatial` | No | No | Yes (direct action conditioning) |
 
 ## Training
 
